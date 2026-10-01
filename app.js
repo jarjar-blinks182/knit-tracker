@@ -164,6 +164,9 @@ function showCounter(id) {
         <button id="reset" class="ghost">Reset count</button>
         <button id="again" class="ghost">Make again</button>
       </div>
+      <label class="notes watched">Watched while knitting
+        <textarea id="watched" rows="3" placeholder="Movies and shows, one per line…"></textarea>
+      </label>
     </section>`;
 
   const bump = (d) => {
@@ -197,14 +200,17 @@ function showCounter(id) {
     }
   };
 
-  const notes = view.querySelector('#notes');
-  notes.value = p.notes || '';
-  let t;
-  notes.oninput = () => {
-    clearTimeout(t);
-    t = setTimeout(() => store.updateProject(id, { notes: notes.value }), 500);
-  };
-  notes.onblur = () => { clearTimeout(t); if (notes.value !== store.getProject(id)?.notes) store.updateProject(id, { notes: notes.value }); };
+  // Free-text boxes saved as you type: notes and what was watched.
+  for (const key of ['notes', 'watched']) {
+    const box = view.querySelector(`#${key}`);
+    box.value = p[key] || '';
+    let t;
+    box.oninput = () => {
+      clearTimeout(t);
+      t = setTimeout(() => store.updateProject(id, { [key]: box.value }), 500);
+    };
+    box.onblur = () => { clearTimeout(t); if (box.value !== (store.getProject(id)?.[key] || '')) store.updateProject(id, { [key]: box.value }); };
+  }
 
   paintCounter(p);
 }
@@ -276,8 +282,10 @@ function paintCounter(p) {
   const prog = view.querySelector('#progress');
   prog.hidden = !target;
   if (target) prog.firstElementChild.style.width = `${Math.min(100, (p.rows / target) * 100)}%`;
-  const notes = view.querySelector('#notes');
-  if (document.activeElement !== notes && notes.value !== (p.notes || '')) notes.value = p.notes || '';
+  for (const key of ['notes', 'watched']) {
+    const box = view.querySelector(`#${key}`);
+    if (document.activeElement !== box && box.value !== (p[key] || '')) box.value = p[key] || '';
+  }
 }
 
 // ---------- confirm / notice (in-app, since some views block confirm()) ----------
