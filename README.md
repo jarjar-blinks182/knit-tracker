@@ -13,7 +13,10 @@ devices.
 - Optional pattern setup: sections (e.g. increases, middle, decreases), each a
   block of rows repeated N times with stitch increases/decreases on given rows.
   The counter then shows the section, repeat, row in the repeat, RS or WS, the
-  stitches on the needle and what this row changes. Sizes like `14 (21)` work.
+  stitches on the needle and what this row changes. Sizes like `14 (21)` work;
+  pick the size you're making on the setup page.
+- Optional per-row instructions: the counter shows what to do on the current
+  row, with increases (M1R, kfb, yo…) in green and decreases (k2tog, ssk…) in red.
 - Knitting in the round (rounds, no RS/WS) and "knit until 11 cm" sections:
   the counter keeps counting and you tap "Reached it" to move to the next
   section. Undoing back past that point reopens the section.
@@ -108,9 +111,10 @@ for my row counter. Reply with only the JSON, in this shape:
   "sections": [
     { "name": "Increases", "rowsPerRepeat": 8, "repeats": [14, 21],
       "stitchChanges": { "1": 1, "3": 1, "5": 1 },
-      "expectedEnd": [51, 72], "note": "" },
+      "expectedEnd": [51, 72], "note": "",
+      "instructions": { "1": "k to marker, M1R, pm, k", "2": "p to end" } },
     { "name": "Body", "rowsPerRepeat": 1, "untilLength": "11 cm (4.5 in)",
-      "estimate": 35, "note": "Knit every round." }
+      "estimate": 35, "instructions": { "*": "Knit every round." } }
   ]
 }
 
@@ -134,6 +138,10 @@ Rules:
   pattern gives a row gauge, put an approximate row count in "estimate".
 - Stitch changes that differ by size go in an array too, e.g. "1": [3, 1] for
   "3 (1) increases". castOn can be a number or one per size.
+- "instructions" maps a row number within one repeat to what the pattern says
+  to do on that row, copied as written (expand "work as row 1" into the actual
+  text). Use "*" for the instruction that applies to every other row of the
+  section. Text that differs by size is an array, one entry per size.
 - Put short reminders (like "then cast off") in "note".
 - Check your numbers: castOn plus all the changes should match each
   expectedEnd. If they don't, re-read the pattern.

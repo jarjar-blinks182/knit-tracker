@@ -11,7 +11,8 @@
 //   "castOn": 4,
 //   "sections": [
 //     { "name": "Increases", "rowsPerRepeat": 8, "repeats": [14, 21],
-//       "stitchChanges": { "1": 1, "3": 1, "5": 1 }, "expectedEnd": [51, 72], "note": "" }
+//       "stitchChanges": { "1": 1, "3": 1, "5": 1 }, "expectedEnd": [51, 72], "note": "",
+//       "instructions": { "1": "k to marker, M1R, pm, k", "*": "knit" } }   // optional
 //   ]
 // }
 
@@ -57,6 +58,16 @@ export function normalize(input) {
       if (d.some((x) => !Number.isFinite(x))) throw new Error(`${label}: row ${k} change should be a number like +1 or -2.`);
       if (d.some((x) => x)) stitchChanges[row] = d.length === 1 ? d[0] : d;
     }
+    // What to do on each row of the repeat; "*" covers the rows not listed.
+    // A value is text, or one text per size.
+    const instructions = {};
+    for (const [k, v] of Object.entries(s.instructions || {})) {
+      const key = k.trim() === '*' ? '*' : int(k, 1);
+      if (key === null) throw new Error(`${label}: instructions should be keyed by row number (or * for every row).`);
+      if (key !== '*' && key > rowsPerRepeat) throw new Error(`${label}: instructions for row ${k}, but the repeat only has ${rowsPerRepeat} rows.`);
+      const texts = (Array.isArray(v) ? v : [v]).map((x) => String(x ?? '').trim().slice(0, 500));
+      if (texts.some(Boolean)) instructions[key] = texts.length === 1 ? texts[0] : texts;
+    }
     const untilIn = Array.isArray(s.untilLength) ? s.untilLength : s.untilLength ? [s.untilLength] : [];
     const until = untilIn.map((x) => String(x).trim().slice(0, 60)).filter(Boolean);
     return {
@@ -68,6 +79,7 @@ export function normalize(input) {
       estimate: perSize(s.estimate, `${label}: estimated rows`, 1),
       inTheRound: typeof s.inTheRound === 'boolean' ? s.inTheRound : null,
       stitchChanges,
+      instructions,
       expectedEnd: perSize(s.expectedEnd, `${label}: expected stitches`, 0),
       note: s.note ? String(s.note).slice(0, 300) : '',
     };
@@ -187,6 +199,7 @@ export function position(p, done, ends = {}) {
   const rowInRepeat = (into % s.rowsPerRepeat) + 1;
   const sts = s.startSts === null ? null : s.startSts + stitchDelta(s, into);
   const change = s.stitchChanges[rowInRepeat] || 0;
+  const ins = s.instructions || {};
   return {
     complete: false,
     total: last.endRow, // null while a length section is open
@@ -205,6 +218,7 @@ export function position(p, done, ends = {}) {
     rowsPerRepeat: s.rowsPerRepeat,
     sts, // on the needle before working this row
     change, // stitches gained or lost on this row
+    instruction: forSize(ins[rowInRepeat] ?? ins['*'], p.size) || '', // what to do on this row
     after: sts === null ? null : sts + change,
   };
 }
@@ -245,6 +259,43 @@ export function formatChanges(obj) {
     .sort((a, b) => Number(a[0]) - Number(b[0]))
     .map(([r, d]) => `${r}:${Array.isArray(d) ? `${sg(d[0])}${d.length > 1 ? ` (${d.slice(1).map(sg).join(', ')})` : ''}` : sg(d)}`)
     .join(', ');
+}
+
+// Setup form text, one row per line: "1: k to marker, M1R" and "*: knit".
+// Per size: "1: K1, M1R, K10, M1R | K1, M1R".
+export function parseInstructions(text) {
+  const out = {};
+  for (const line of String(text || '').split('\n').map((x) => x.trim()).filter(Boolean)) {
+    const m = line.match(/^(?:(?:row|round|rnd)\s*)?(\d+|\*)\s*[:._)-]\s*(.*)$/i);
+    if (!m) throw new Error(`Couldn't read “${line}”. Start each line with the row number, like 1: k2, p2 (or *: for every other row).`);
+    const texts = m[2].split('|').map((x) => x.trim());
+    out[m[1]] = texts.length > 1 ? texts : texts[0];
+  }
+  return out;
+}
+
+export function formatInstructions(obj) {
+  return Object.entries(obj || {})
+    .sort((a, b) => (a[0] === '*') - (b[0] === '*') || Number(a[0]) - Number(b[0]))
+    .map(([r, t]) => `${r}: ${Array.isArray(t) ? t.join(' | ') : t}`)
+    .join('\n');
+}
+
+// Split instruction text into plain, increase and decrease pieces, so the
+// counter can colour them: [{ text, kind: null | 'inc' | 'dec' }].
+const INC = String.raw`m1[lr]?p?|kf&?b|pf&?b|yo|lli|rli|inc(?:s|reases?)?`;
+const DEC = String.raw`[kp]\d+tog(?:\s?tbl)?|sssk|ssk|ssp|sk2p|s2kp|skpo?|cdd|psso|decs?|decreases?`;
+const STEP_RE = new RegExp(String.raw`(?<![\w&])(?:(${INC})|(${DEC}))(?![\w&])`, 'gi');
+export function markSteps(text) {
+  const out = [];
+  let last = 0;
+  for (const m of String(text || '').matchAll(STEP_RE)) {
+    if (m.index > last) out.push({ text: text.slice(last, m.index), kind: null });
+    out.push({ text: m[0], kind: m[1] ? 'inc' : 'dec' });
+    last = m.index + m[0].length;
+  }
+  if (last < String(text || '').length) out.push({ text: text.slice(last), kind: null });
+  return out;
 }
 
 export const signed = (d) => (d > 0 ? `+${d}` : d < 0 ? `−${-d}` : '0');

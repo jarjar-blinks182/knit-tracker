@@ -14,6 +14,10 @@ let editingId = null;
 let wakeLock = null;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Instruction text with increases in green and decreases in red.
+const stepsHtml = (text) => P.markSteps(text)
+  .map((x) => (x.kind ? `<span class="step-${x.kind}">${esc(x.text)}</span>` : esc(x.text)))
+  .join('');
 const craftIcon = (c) => (c === 'crochet' ? '🪝' : '🧶');
 
 // ---------- routing ----------
@@ -244,9 +248,10 @@ function paintCounter(p) {
       ${p.pattern.sections.at(-1).note ? `<div class="pp-note">${esc(p.pattern.sections.at(-1).note)}</div>` : ''}` : `
       <div class="pp-head">
         <span class="pp-section">${esc(s.name)}</span>
-        <span class="muted">section ${pos.sectionIndex + 1} of ${pos.sectionCount}</span>
+        <span class="muted">${p.pattern.sizes?.length > 1 ? `Size ${esc(p.pattern.sizes[p.pattern.size] ?? '')} · ` : ''}section ${pos.sectionIndex + 1} of ${pos.sectionCount}</span>
       </div>
       <div class="pp-grid">${grid}</div>
+      ${pos.instruction ? `<div class="pp-instr">${stepsHtml(pos.instruction)}</div>` : ''}
       ${pos.open ? `
         <div class="pp-until">
           <span>Knit until <strong>${esc(s.until)}</strong></span>
@@ -257,7 +262,7 @@ function paintCounter(p) {
             ? `This ${u}: <strong>${pos.change > 0 ? 'increase' : 'decrease'} ${P.signed(pos.change)}</strong>${pos.after != null ? ` → ${pos.after} sts` : ''}`
             : `This ${u}: no increases or decreases`}
         </div>`}
-      ${s.note ? `<div class="pp-note">${esc(s.note)}</div>` : ''}`;
+      ${s.note ? `<div class="pp-note">${stepsHtml(s.note)}</div>` : ''}`;
   }
   if (p.repeat && !pos) {
     const done = Math.floor(p.rows / p.repeat);
@@ -552,7 +557,7 @@ function showPatternSetup(id) {
             <input id="sizes" placeholder="e.g. S, M, L" autocomplete="off">
           </label>
         </div>
-        <label id="size-row" hidden>Size you're making
+        <label id="size-row" class="size-row" hidden>Size you're making
           <select id="size"></select>
         </label>
       </div>
@@ -598,6 +603,8 @@ function showPatternSetup(id) {
         <label>About how many rows <small>(optional)</small>
           <input class="s-estimate" inputmode="numeric" value="${esc(P.formatSizes(s.estimate))}"></label>
       </div>
+      <label>Row instructions <small>(optional, one row per line; * for every other row; | between sizes)</small>
+        <textarea class="s-instr" rows="3" spellcheck="false" placeholder="1: k to marker, M1R, pm, k&#10;2: p to end&#10;*: knit">${esc(P.formatInstructions(s.instructions))}</textarea></label>
       <label>Note <small>(optional)</small> <input class="s-note" value="${esc(s.note || '')}"></label>`;
     if (typeof s.inTheRound === 'boolean') el.dataset.inTheRound = String(s.inTheRound);
     el.querySelector('.s-remove').onclick = () => { el.remove(); refresh(); };
@@ -634,6 +641,9 @@ function showPatternSetup(id) {
       let stitchChanges;
       try { stitchChanges = P.parseChanges(el.querySelector('.s-changes').value); }
       catch (e) { throw new Error(`${name}: ${e.message}`); }
+      let instructions;
+      try { instructions = P.parseInstructions(el.querySelector('.s-instr').value); }
+      catch (e) { throw new Error(`${name}: ${e.message}`); }
       const until = el.querySelector('.s-until').value.split('|').map((x) => x.trim()).filter(Boolean);
       return {
         name,
@@ -644,6 +654,7 @@ function showPatternSetup(id) {
         repeats: P.parseSizes(el.querySelector('.s-repeats').value) ?? 1,
         expectedEnd: P.parseSizes(el.querySelector('.s-expected').value),
         stitchChanges,
+        instructions,
         note: el.querySelector('.s-note').value.trim(),
       };
     });
@@ -692,6 +703,7 @@ function showPatternSetup(id) {
 
   view.querySelector('.setup').addEventListener('input', (e) => {
     if (e.target.id === 'json') return;
+    if (e.target.id === 'size') $('#size-row').classList.remove('attention');
     if (e.target.id === 'sizes') syncSizes();
     if (e.target.id === 'in-round') $('#side-field').hidden = e.target.checked;
     refresh();
@@ -707,8 +719,10 @@ function showPatternSetup(id) {
       fill(p);
       if (p.name && (proj.name === 'Untitled' || !proj.name)) store.updateProject(id, { name: p.name });
       msg.className = 'msg';
-      msg.textContent = `Loaded ${p.sections.length} section${p.sections.length === 1 ? '' : 's'}. Check them below, then save.`;
+      const many = p.sizes.length > 1;
+      msg.textContent = `Loaded ${p.sections.length} section${p.sections.length === 1 ? '' : 's'}. ${many ? 'Pick the size you\'re making, check' : 'Check'} the sections below, then save.`;
       $('#paste').open = false;
+      if (many) { $('#size-row').classList.add('attention'); $('#size').focus(); }
     } catch (e) {
       msg.className = 'msg error';
       msg.textContent = e instanceof SyntaxError ? `That isn't valid JSON: ${e.message}` : e.message;

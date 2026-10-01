@@ -10,6 +10,10 @@
   --danger: #b3261e;
   --ok: #3f7d4e;
   --warn: #c08a1e;
+  --inc: #2e7d3e;
+  --inc-soft: #dcf0df;
+  --dec: #b3261e;
+  --dec-soft: #f9dedb;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -25,6 +29,10 @@
     --danger: #f2827a;
     --ok: #7fc08e;
     --warn: #e2b55a;
+    --inc: #86d496;
+    --inc-soft: #1f3a25;
+    --dec: #f2827a;
+    --dec-soft: #43201d;
     color-scheme: dark;
   }
 }
@@ -40,6 +48,10 @@
     --danger: #f2827a;
     --ok: #7fc08e;
     --warn: #e2b55a;
+    --inc: #86d496;
+    --inc-soft: #1f3a25;
+    --dec: #f2827a;
+    --dec-soft: #43201d;
     color-scheme: dark;
 }
 
@@ -194,8 +206,15 @@ dialog h2 { margin: 0; font-size: 20px; }
 .pp-val { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pp-val small { font-size: 15px; font-weight: 400; }
 .pp-change { border-radius: 10px; padding: 10px 12px; background: var(--bg); color: var(--muted); }
-.pp-change.inc, .pp-change.dec { background: var(--accent-soft); color: var(--text); }
 .pp-note { font-size: 15px; color: var(--muted); }
+.pp-instr { font-size: 20px; line-height: 1.4; font-weight: 500; }
+.step-inc, .step-dec { font-weight: 700; padding: 0 4px; border-radius: 5px; white-space: nowrap; }
+.step-inc { color: var(--inc); background: var(--inc-soft); }
+.step-dec { color: var(--dec); background: var(--dec-soft); }
+.pp-change.inc { background: var(--inc-soft); color: var(--text); }
+.pp-change.dec { background: var(--dec-soft); color: var(--text); }
+.pp-change.inc strong { color: var(--inc); }
+.pp-change.dec strong { color: var(--dec); }
 
 /* pattern setup */
 .setup { display: grid; gap: 14px; }
@@ -246,6 +265,8 @@ dialog h2 { margin: 0; font-size: 20px; }
 .dc-link { overflow-wrap: anywhere; }
 .dc-edit, .dc-empty { color: var(--accent); font-weight: 600; font-size: 15px; }
 select { appearance: auto; }
+.size-row { font-weight: 600; }
+.size-row.attention select { box-shadow: 0 0 0 3px var(--accent); }
 .section-card .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .section-card .danger { justify-self: start; padding: 4px 0; }
 
