@@ -10,5 +10,12 @@ service cloud.firestore {
         && request.resource.data.updatedAt >= resource.data.updatedAt;
       allow delete: if false; // deletes are synced as a "deleted" flag
     }
+    // Their pattern library, with the same rules.
+    match /users/{uid}/patterns/{patternId} {
+      allow read, create: if request.auth != null && request.auth.uid == uid;
+      allow update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.updatedAt >= resource.data.updatedAt;
+      allow delete: if false;
+    }
   }
 }

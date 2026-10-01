@@ -10,6 +10,11 @@ devices.
 - Multiple projects, each with a row count, optional target rows (progress bar)
   and optional rows-per-repeat ("3 / 8 into repeat 2")
 - Big tap area to add a row, −1 to undo, reset
+- **Pattern library** (Patterns, on the project list): every pattern you paste
+  or set up is saved there, and a new project can start from one. Rename,
+  delete, copy a pattern's JSON to share it, paste JSON straight into the
+  library, or add the patterns from your existing projects. Synced like
+  projects (`users/{uid}/patterns`), so it's private to your account.
 - **Make again**: start a fresh copy of a project (same pattern and size, count at 0, yarn blank, needle size from the pattern), handy for remaking with different yarn
 - Optional pattern setup: sections (e.g. increases, middle, decreases), each a
   block of rows repeated N times with stitch increases/decreases on given rows.
@@ -44,12 +49,13 @@ No build step: plain HTML, CSS and JavaScript modules.
 | --- | --- |
 | `index.html`, `style.css`, `app.js` | The app UI |
 | `store.js` | Local storage of projects (localStorage), tracks unsynced changes |
+| `library.js` | Pattern library, stored and synced the same way as projects |
 | `pattern.js` | Pattern sections: position, stitch counts, checks |
 | `sync.js` | Firebase sync and sign in |
 | `vendor/firebase/` | Firebase JS SDK 12.19.0, served with the app |
 | `config.js` | Firebase web config (null = this device only) |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Offline support and install-to-home-screen |
-| `firestore.rules` | Security rules: each person sees only their own projects |
+| `firestore.rules` | Security rules: each person sees only their own projects and patterns |
 
 ## Run locally
 

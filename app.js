@@ -1,6 +1,7 @@
 import * as store from './store.js';
 import * as sync from './sync.js';
 import * as P from './pattern.js';
+import * as library from './library.js';
 
 const view = document.getElementById('view');
 const titleEl = document.getElementById('title');
@@ -29,6 +30,7 @@ function route() {
   const pd = hash.match(/^#\/p\/([\w-]+)\/details/);
   if (pd) return showDetails(pd[1]);
   if (hash.startsWith('#/stats')) return showStats();
+  if (hash.startsWith('#/library')) return showLibrary();
   const m = hash.match(/^#\/p\/([\w-]+)/);
   if (m) return showCounter(m[1]);
   if (hash.startsWith('#/settings')) return showSettings();
@@ -39,6 +41,9 @@ window.addEventListener('hashchange', route);
 store.subscribe(({ fromRemote }) => {
   // Re-render on synced changes, and on local changes in the list view.
   if (current?.name === 'list' || (fromRemote && ['counter', 'stats'].includes(current?.name))) route();
+});
+library.subscribe(({ fromRemote }) => {
+  if (fromRemote && current?.name === 'library') route();
 });
 
 function setChrome(title, showBack) {
@@ -70,6 +75,7 @@ function showList() {
         </div>`}
       <div class="list-actions">
         <button class="primary new-btn" id="new-btn">+ New project</button>
+        <a class="ghost button" href="#/library">Patterns</a>
         <a class="ghost button" href="#/stats">Stats</a>
       </div>
       ${finished.length ? `
@@ -296,7 +302,8 @@ function ask(message, okLabel = 'OK', withCancel = true) {
 
 // ---------- create / edit ----------
 
-function openEditor(id) {
+// fromLibrary: id of a library pattern to start the new project from.
+function openEditor(id, fromLibrary = null) {
   editingId = id;
   const p = id ? store.getProject(id) : null;
   form.reset();
@@ -308,11 +315,16 @@ function openEditor(id) {
   form.querySelector('#new-details').hidden = !!p;
   form.querySelector('#new-weight').innerHTML = `<option value=""></option>${WEIGHTS.map((w) => `<option>${w}</option>`).join('')}`;
   autoNeedle = '';
+  autoName = '';
   syncToolLabel();
   // Pattern JSON can be pasted straight in when creating a project.
   form.querySelector('#new-paste').hidden = !!p;
   form.querySelector('#new-paste').open = false;
   form.querySelector('#new-json-msg').textContent = '';
+  const libs = p ? [] : library.list();
+  const libSel = form.elements.libraryPattern;
+  libSel.innerHTML = `<option value="">None</option>${libs.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('')}`;
+  form.querySelector('#new-lib-row').hidden = !libs.length;
   if (p) {
     form.elements.name.value = p.name;
     form.elements.craft.value = p.craft;
@@ -321,15 +333,35 @@ function openEditor(id) {
     form.elements.stitchesPerRow.value = p.stitchesPerRow ?? '';
   }
   syncToolLabel();
+  if (fromLibrary && library.get(fromLibrary)) libSel.value = fromLibrary;
+  pickLibrary();
   dialog.showModal();
   if (!p) form.elements.name.focus();
 }
+
+// A library pattern stands in for pasted JSON: fills the name and needle the
+// same way, and the paste box and row fields go away while one is picked.
+function pickLibrary() {
+  const e = editingId ? null : library.get(form.elements.libraryPattern.value);
+  const hasPattern = !!e || !!store.getProject(editingId)?.pattern;
+  form.querySelector('#new-paste').hidden = !!editingId || !!e;
+  form.querySelector('.two').hidden = hasPattern;
+  form.querySelector('#spr-row').hidden = hasPattern;
+  if (!e) return;
+  const name = form.elements.name;
+  if (!name.value.trim() || name.value === autoName) name.value = autoName = e.name;
+  const needle = form.elements.needle;
+  if (e.pattern.needle && (!needle.value.trim() || needle.value === autoNeedle)) needle.value = autoNeedle = e.pattern.needle;
+}
+form.elements.libraryPattern.addEventListener('change', pickLibrary);
 
 // Pasted pattern JSON from the New project dialog, read on submit.
 let pendingPattern = null;
 // Needle size last filled in from pasted JSON, so it's only replaced while
 // it hasn't been typed over.
 let autoNeedle = '';
+// Same for the name filled in from a library pattern.
+let autoName = '';
 
 function syncToolLabel() {
   const crochet = form.elements.craft.value === 'crochet';
@@ -364,9 +396,13 @@ form.elements.patternJson.addEventListener('input', () => {
 form.addEventListener('submit', (e) => {
   pendingPattern = null;
   const text = form.elements.patternJson.value.trim();
-  if (editingId || e.submitter?.value !== 'save' || !text) return;
+  if (editingId || e.submitter?.value !== 'save') return;
+  const lib = library.get(form.elements.libraryPattern.value);
+  if (lib) { pendingPattern = structuredClone(lib.pattern); return; }
+  if (!text) return;
   try {
     pendingPattern = parsePatternJson(text);
+    library.add(pendingPattern, pendingPattern.name || form.elements.name.value);
   } catch (err) {
     e.preventDefault();
     const msg = form.querySelector('#new-json-msg');
@@ -843,6 +879,8 @@ function showPatternSetup(id) {
   $('#save-pattern').onclick = () => {
     const p = refresh();
     if (!p) return;
+    // New or changed patterns go into the library too.
+    if (!proj.pattern || library.keyOf(proj.pattern) !== library.keyOf(p)) library.add(p, p.name || store.getProject(id).name);
     store.updateProject(id, { pattern: p, target: null, repeat: null, sectionEnds: P.pruneEnds(proj.sectionEnds, proj.rows) });
     location.hash = `#/p/${id}`;
   };
@@ -854,6 +892,111 @@ function showPatternSetup(id) {
   });
 
   fill(proj.pattern || { firstRowSide: 'RS', sections: [{}] });
+}
+
+// ---------- pattern library ----------
+
+function patternSummary(pt) {
+  const n = pt.sections.length;
+  return [
+    `${n} section${n === 1 ? '' : 's'}`,
+    pt.inTheRound ? 'in the round' : '',
+    pt.sizes?.length > 1 ? `sizes ${pt.sizes.join(', ')}` : '',
+    pt.needle || '',
+  ].filter(Boolean).join(' · ');
+}
+
+function showLibrary() {
+  current = { name: 'library' };
+  releaseWakeLock();
+  setChrome('Pattern library', true);
+  const items = library.list();
+  // Patterns on projects that aren't in the library yet (one per pattern).
+  const missing = new Map();
+  for (const p of store.listProjects()) {
+    if (p.pattern && !library.has(p.pattern)) missing.set(library.keyOf(p.pattern), p);
+  }
+
+  view.innerHTML = `
+    <section class="library">
+      ${items.length ? items.map((e) => `
+        <div class="card lib-card" data-id="${esc(e.id)}">
+          <span class="card-name">${esc(e.name)}</span>
+          <span class="card-sub">${esc(patternSummary(e.pattern))}</span>
+          <div class="row-actions">
+            <button class="primary" data-act="start">Start project</button>
+            <button class="ghost" data-act="rename">Rename</button>
+            <button class="ghost" data-act="copy">Copy JSON</button>
+            <button class="danger" data-act="delete">Delete</button>
+          </div>
+        </div>`).join('') : `
+        <div class="empty">
+          <p class="big">📒</p>
+          <p>No saved patterns yet.</p>
+          <p class="muted">Patterns you paste or set up are saved here, ready for your next project.</p>
+        </div>`}
+      ${missing.size ? `<button class="ghost" id="lib-import">Add ${missing.size} pattern${missing.size === 1 ? '' : 's'} from your projects</button>` : ''}
+      <details class="paste" id="lib-paste">
+        <summary>Add pattern JSON</summary>
+        <textarea id="lib-json" rows="6" spellcheck="false" placeholder='{ "name": "…", "sections": [ … ] }'></textarea>
+        <div class="row-actions"><button type="button" class="primary" id="lib-add">Add to library</button></div>
+        <p class="msg" id="lib-msg"></p>
+      </details>
+    </section>`;
+
+  view.querySelector('#lib-import')?.addEventListener('click', () => {
+    for (const p of missing.values()) library.add(p.pattern, p.pattern.name || p.name, { revive: true });
+    showLibrary();
+  });
+  view.querySelector('#lib-add').onclick = () => {
+    const msg = view.querySelector('#lib-msg');
+    try {
+      const pt = parsePatternJson(view.querySelector('#lib-json').value);
+      if (library.has(pt)) { msg.className = 'msg'; msg.textContent = 'That pattern is already in your library.'; return; }
+      library.add(pt, pt.name, { revive: true });
+      showLibrary();
+    } catch (err) {
+      msg.className = 'msg error';
+      msg.textContent = err.message;
+    }
+  };
+
+  view.querySelector('.library').addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('button[data-act]');
+    if (!btn) return;
+    const cardEl = btn.closest('.lib-card');
+    const e = library.get(cardEl.dataset.id);
+    if (!e) return;
+    const act = btn.dataset.act;
+    if (act === 'start') {
+      openEditor(null, e.id);
+    } else if (act === 'delete') {
+      if (await ask(`Remove “${e.name}” from your library? Projects using it keep their pattern.`, 'Delete')) {
+        library.remove(e.id);
+        showLibrary();
+      }
+    } else if (act === 'copy') {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify({ ...e.pattern, name: e.name }, null, 2));
+        btn.textContent = 'Copied';
+      } catch {
+        ask("Couldn't copy the JSON here.", 'OK', false);
+      }
+    } else if (act === 'rename') {
+      const nameEl = cardEl.querySelector('.card-name');
+      nameEl.outerHTML = `<form class="lib-rename"><input value="${esc(e.name)}" maxlength="80" aria-label="Pattern name"><button class="primary">Save</button></form>`;
+      btn.hidden = true;
+      const f = cardEl.querySelector('.lib-rename');
+      const input = f.querySelector('input');
+      input.focus();
+      input.select();
+      f.onsubmit = (sub) => {
+        sub.preventDefault();
+        library.rename(e.id, input.value);
+        showLibrary();
+      };
+    }
+  });
 }
 
 // ---------- settings / sync ----------

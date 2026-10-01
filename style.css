@@ -300,3 +300,11 @@ label.check input { width: auto; margin: 0; }
 .yarn-fields legend { font-weight: 600; font-size: 15px; padding: 0; margin-bottom: 6px; }
 #new-details { display: grid; gap: 14px; }
 .yarn-fields .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* pattern library */
+.list-actions { grid-template-columns: 1fr auto auto; }
+.library { display: grid; gap: 10px; }
+.lib-card { display: grid; gap: 8px; }
+.lib-card .card-name { white-space: normal; }
+.lib-card .row-actions button { padding: 6px 12px; font-size: 14px; }
+.lib-rename { display: flex; gap: 8px; }

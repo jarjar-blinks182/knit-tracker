@@ -5,6 +5,7 @@
 
 import { FIREBASE_CONFIG } from './config.js';
 import * as store from './store.js';
+import * as library from './library.js';
 
 const SDK = './vendor/firebase/';
 
@@ -54,6 +55,7 @@ export async function init() {
   });
 
   store.subscribe(({ fromRemote }) => { if (!fromRemote) schedulePush(); });
+  library.subscribe(({ fromRemote }) => { if (!fromRemote) schedulePush(); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') syncNow();
     else flush();
@@ -70,7 +72,7 @@ function schedulePush() {
 
 function flush() {
   clearTimeout(pushTimer);
-  if (fb && user && store.dirtyProjects().length) push().catch(() => {});
+  if (fb && user) COLLECTIONS.forEach((c) => { if (c.dirty().length) pushOne(c).catch(() => {}); });
 }
 
 export function syncNow() {
@@ -81,9 +83,11 @@ export function syncNow() {
     setStatus('syncing');
     try {
       // Pull first, so newer changes from another device replace stale local
-      // edits instead of being overwritten by them.
-      await pull();
-      await push();
+      // edits instead of being overwritten by them. Each collection syncs on
+      // its own, so a problem with the library never holds up projects.
+      const errors = await Promise.all(COLLECTIONS.map((c) => pullOne(c).then(() => pushOne(c)).then(() => null, (e) => e)));
+      const failed = errors.find(Boolean);
+      if (failed) throw failed;
       setStatus('synced');
     } catch (e) {
       setStatus(navigator.onLine ? 'error' : 'offline', friendly(e));
@@ -92,38 +96,48 @@ export function syncNow() {
   return running;
 }
 
-function projectsRef() {
-  return fb.fs.collection(fb.db, 'users', user.id, 'projects');
+// Projects and the pattern library sync the same way, each in its own
+// collection under the signed-in person.
+const COLLECTIONS = [
+  { name: 'projects', dirty: store.dirtyProjects, clear: store.clearDirty, lastPull: store.lastPull, merge: store.mergeRemote },
+  // A refused library write stays queued: until firestore.rules with the
+  // patterns block is published, every library write is refused.
+  { name: 'patterns', dirty: library.dirtyItems, clear: library.clearDirty, lastPull: library.lastPull, merge: library.mergeRemote, keepRefused: true },
+];
+
+function ref(c) {
+  return fb.fs.collection(fb.db, 'users', user.id, c.name);
 }
 
-async function push() {
-  const dirty = store.dirtyProjects().map((p) => JSON.parse(JSON.stringify(p)));
+async function pushOne(c) {
+  const dirty = c.dirty().map((p) => JSON.parse(JSON.stringify(p)));
   if (!dirty.length) return;
   const { doc, setDoc, serverTimestamp } = fb.fs;
-  const results = await Promise.allSettled(dirty.map((p) => setDoc(doc(projectsRef(), p.id), {
+  const results = await Promise.allSettled(dirty.map((p) => setDoc(doc(ref(c), p.id), {
     data: p,
     updatedAt: p.updatedAt,
     deleted: !!p.deleted,
     syncedAt: serverTimestamp(),
   })));
   // A refused write means the saved copy is newer; the next pull brings it in.
-  const done = dirty.filter((_, i) => results[i].status === 'fulfilled' || results[i].reason?.code === 'permission-denied');
-  store.clearDirty(done);
-  const failed = results.find((r) => r.status === 'rejected' && r.reason?.code !== 'permission-denied');
+  const refusedOk = (r) => r.reason?.code === 'permission-denied' && !c.keepRefused;
+  const done = dirty.filter((_, i) => results[i].status === 'fulfilled' || refusedOk(results[i]));
+  c.clear(done);
+  const failed = results.find((r) => r.status === 'rejected' && !refusedOk(r));
   if (failed) throw failed.reason;
 }
 
-async function pull() {
+async function pullOne(c) {
   const { query, where, orderBy, getDocs, Timestamp } = fb.fs;
-  const since = store.lastPull();
+  const since = c.lastPull();
   const q = since
-    ? query(projectsRef(), where('syncedAt', '>', Timestamp.fromDate(new Date(since))), orderBy('syncedAt'))
-    : query(projectsRef(), orderBy('syncedAt'));
+    ? query(ref(c), where('syncedAt', '>', Timestamp.fromDate(new Date(since))), orderBy('syncedAt'))
+    : query(ref(c), orderBy('syncedAt'));
   const snap = await getDocs(q);
   if (snap.empty) return;
   const rows = snap.docs.map((d) => d.data());
   const last = rows[rows.length - 1].syncedAt;
-  store.mergeRemote(rows.map((r) => r.data), last ? last.toDate().toISOString() : since);
+  c.merge(rows.map((r) => r.data), last ? last.toDate().toISOString() : since);
 }
 
 // ---- sign in ----
