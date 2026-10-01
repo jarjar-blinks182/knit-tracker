@@ -14,6 +14,9 @@ devices.
   block of rows repeated N times with stitch increases/decreases on given rows.
   The counter then shows the section, repeat, row in the repeat, RS or WS, the
   stitches on the needle and what this row changes. Sizes like `14 (21)` work.
+- Knitting in the round (rounds, no RS/WS) and "knit until 11 cm" sections:
+  the counter keeps counting and you tap "Reached it" to move to the next
+  section. Undoing back past that point reopens the section.
 - Paste a pattern as JSON instead of typing it in (see below), with a check
   against the stitch counts the pattern states
 - Notes per project
@@ -100,11 +103,14 @@ for my row counter. Reply with only the JSON, in this shape:
   "name": "Pattern name",
   "sizes": ["S", "M"],
   "firstRowSide": "RS",
-  "castOn": 4,
+  "inTheRound": false,
+  "castOn": [87, 99],
   "sections": [
     { "name": "Increases", "rowsPerRepeat": 8, "repeats": [14, 21],
       "stitchChanges": { "1": 1, "3": 1, "5": 1 },
-      "expectedEnd": [51, 72], "note": "" }
+      "expectedEnd": [51, 72], "note": "" },
+    { "name": "Body", "rowsPerRepeat": 1, "untilLength": "11 cm (4.5 in)",
+      "estimate": 35, "note": "Knit every round." }
   ]
 }
 
@@ -121,7 +127,13 @@ Rules:
   only one size, and use plain numbers.
 - expectedEnd is the stitch count the pattern says you should have at the end
   of the section, if it says. Leave it out otherwise.
-- firstRowSide is whether row 1 of the first section is RS or WS.
+- firstRowSide is whether row 1 of the first section is RS or WS. Set
+  "inTheRound": true for patterns knit in rounds (no RS/WS).
+- When a section says "repeat until it measures X", use "untilLength" with the
+  length as written (one string, or one per size) instead of "repeats". If the
+  pattern gives a row gauge, put an approximate row count in "estimate".
+- Stitch changes that differ by size go in an array too, e.g. "1": [3, 1] for
+  "3 (1) increases". castOn can be a number or one per size.
 - Put short reminders (like "then cast off") in "note".
 - Check your numbers: castOn plus all the changes should match each
   expectedEnd. If they don't, re-read the pattern.

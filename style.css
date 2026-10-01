@@ -264,3 +264,13 @@ select { appearance: auto; }
 .stat-val { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .summary th.num { text-align: right; }
 .stats td.num:last-child { text-align: right; }
+
+/* knit-until sections */
+.pp-until { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--accent-soft); border-radius: 10px; padding: 10px 12px; }
+.pp-until button { padding: 10px 14px; }
+.until-row { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; }
+.until-row label { font-size: 13px; }
+.until-row small { display: block; }
+label.check { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+label.check input { width: auto; margin: 0; }

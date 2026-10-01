@@ -51,15 +51,22 @@ export function normalize(input) {
     const stitchChanges = {};
     for (const [k, v] of Object.entries(s.stitchChanges || {})) {
       const row = int(k, 1);
-      const d = Math.round(Number(v));
+      // A number, or one per size like [3, 1] for "3 (1) increases".
+      const d = (Array.isArray(v) ? v : [v]).map((x) => Math.round(Number(String(x).replace('−', '-'))));
       if (!row || row > rowsPerRepeat) throw new Error(`${label}: stitch change on row ${k}, but the repeat only has ${rowsPerRepeat} rows.`);
-      if (!Number.isFinite(d)) throw new Error(`${label}: row ${k} change should be a number like +1 or -2.`);
-      if (d) stitchChanges[row] = d;
+      if (d.some((x) => !Number.isFinite(x))) throw new Error(`${label}: row ${k} change should be a number like +1 or -2.`);
+      if (d.some((x) => x)) stitchChanges[row] = d.length === 1 ? d[0] : d;
     }
+    const untilIn = Array.isArray(s.untilLength) ? s.untilLength : s.untilLength ? [s.untilLength] : [];
+    const until = untilIn.map((x) => String(x).trim().slice(0, 60)).filter(Boolean);
     return {
       name: String(s.name || `Section ${i + 1}`).slice(0, 60),
       rowsPerRepeat,
-      repeats,
+      repeats: until.length ? null : repeats,
+      // "Repeat until 11 cm": the knitter says when the section is done.
+      untilLength: until.length > 1 ? until : until[0] || null,
+      estimate: perSize(s.estimate, `${label}: estimated rows`, 1),
+      inTheRound: typeof s.inTheRound === 'boolean' ? s.inTheRound : null,
       stitchChanges,
       expectedEnd: perSize(s.expectedEnd, `${label}: expected stitches`, 0),
       note: s.note ? String(s.note).slice(0, 300) : '',
@@ -70,71 +77,128 @@ export function normalize(input) {
     sizes,
     size: Math.min(int(raw.size) ?? 0, nSizes - 1),
     firstRowSide: String(raw.firstRowSide || 'RS').toUpperCase() === 'WS' ? 'WS' : 'RS',
-    castOn: int(raw.castOn) ?? null,
+    inTheRound: !!raw.inTheRound,
+    castOn: perSize(raw.castOn, 'Cast-on stitches', 0),
     sections,
   };
 }
 
-// Section summaries for the chosen size: where each ends, stitch counts, and
-// whether they match the counts the pattern states.
-export function plan(p) {
+const sumChanges = (s) => Object.values(s.stitchChanges).reduce((a, b) => a + b, 0);
+
+// Resolve per-size stitch changes ({ 1: [3, 1] }) for the chosen size.
+function changesFor(s, size) {
+  const out = {};
+  for (const [k, v] of Object.entries(s.stitchChanges || {})) {
+    const d = forSize(v, size);
+    if (d) out[k] = d;
+  }
+  return out;
+}
+
+// Stitches gained or lost over the first n rows of a section.
+function stitchDelta(s, n) {
+  let d = Math.floor(n / s.rowsPerRepeat) * sumChanges(s);
+  for (let r = 1; r <= n % s.rowsPerRepeat; r++) d += s.stitchChanges[r] || 0;
+  return d;
+}
+
+export const inRound = (p, s) => (s && s.inTheRound != null ? s.inTheRound : !!p.inTheRound);
+export const rowWord = (p, s, n = 1) => `${inRound(p, s) ? 'round' : 'row'}${n === 1 ? '' : 's'}`;
+
+// Section summaries for the chosen size: where each starts and ends, stitch
+// counts, and whether they match the counts the pattern states.
+// `ends` maps a "knit until length" section's index to the total rows done
+// when the knitter finished it. The first unfinished one is `open`; rows of
+// the sections after it aren't known yet (startRow/endRow are null).
+export function plan(p, ends = {}) {
   let row = 0;
-  let sts = p.castOn;
-  return p.sections.map((s) => {
-    const repeats = forSize(s.repeats, p.size) || 1;
-    const perRepeat = Object.values(s.stitchChanges).reduce((a, b) => a + b, 0);
-    const startRow = row + 1;
+  let rowKnown = true;
+  let sts = forSize(p.castOn, p.size) ?? null;
+  return p.sections.map((raw, index) => {
+    const s = { ...raw, stitchChanges: changesFor(raw, p.size) };
+    const until = forSize(s.untilLength, p.size) || null;
+    const expected = forSize(s.expectedEnd, p.size) ?? null;
+    const startRow = rowKnown ? row + 1 : null;
     const startSts = sts;
-    row += repeats * s.rowsPerRepeat;
-    if (sts !== null) sts += repeats * perRepeat;
-    const expected = forSize(s.expectedEnd, p.size);
+    let repeats = null;
+    let rowsIn = null;
+    let open = false;
+    if (until) {
+      const end = rowKnown ? ends[index] : null;
+      if (end != null && end >= row) {
+        rowsIn = end - row;
+        repeats = Math.ceil(rowsIn / s.rowsPerRepeat);
+      } else {
+        open = rowKnown;
+      }
+    } else {
+      repeats = forSize(s.repeats, p.size) || 1;
+      rowsIn = repeats * s.rowsPerRepeat;
+    }
+    if (rowsIn == null) {
+      rowKnown = false;
+      if (sts !== null && sumChanges(s) !== 0) sts = null;
+    } else {
+      if (rowKnown) row += rowsIn;
+      if (sts !== null) sts += stitchDelta(s, rowsIn);
+    }
     return {
       ...s,
+      index,
+      until,
+      estimate: forSize(s.estimate, p.size) ?? null,
       repeats,
       startRow,
-      endRow: row,
+      endRow: rowKnown ? row : null,
       startSts,
       endSts: sts,
-      expected: expected ?? null,
+      open,
+      expected,
       matches: expected == null || sts === null ? null : expected === sts,
     };
   });
 }
 
-export function totalRows(p) {
-  const pl = plan(p);
+// Total rows, or null while a "knit until length" section is unfinished.
+export function totalRows(p, ends = {}) {
+  const pl = plan(p, ends);
   return pl.length ? pl[pl.length - 1].endRow : 0;
 }
 
+// Drop finished-at marks beyond the current count (after undoing rows).
+export function pruneEnds(ends, done) {
+  const out = {};
+  for (const [k, v] of Object.entries(ends || {})) if (v <= done) out[k] = v;
+  return out;
+}
+
 // Where the knitter is after `done` rows: the row they're about to work.
-export function position(p, done) {
-  const pl = plan(p);
-  const total = pl.length ? pl[pl.length - 1].endRow : 0;
+export function position(p, done, ends = {}) {
+  const pl = plan(p, ends);
   const row = done + 1;
-  const sideOf = (r) => ((r % 2 === 1) === (p.firstRowSide === 'RS') ? 'RS' : 'WS');
-  if (row > total) {
-    return { complete: true, total, side: sideOf(row), sts: pl.length ? pl[pl.length - 1].endSts : p.castOn };
+  const s = pl.find((x) => (x.open ? row >= x.startRow : x.endRow != null && row <= x.endRow));
+  const last = pl[pl.length - 1];
+  if (!s) {
+    return { complete: true, total: last?.endRow ?? done, side: null, sts: last ? last.endSts : forSize(p.castOn, p.size), unit: rowWord(p, last, 2) };
   }
-  const i = pl.findIndex((s) => row <= s.endRow);
-  const s = pl[i];
+  const round = inRound(p, s);
   const into = row - s.startRow; // 0-based rows into this section
   const repeat = Math.floor(into / s.rowsPerRepeat) + 1;
   const rowInRepeat = (into % s.rowsPerRepeat) + 1;
-  const perRepeat = Object.values(s.stitchChanges).reduce((a, b) => a + b, 0);
-  let sts = null;
-  if (s.startSts !== null) {
-    sts = s.startSts + (repeat - 1) * perRepeat;
-    for (let r = 1; r < rowInRepeat; r++) sts += s.stitchChanges[r] || 0;
-  }
+  const sts = s.startSts === null ? null : s.startSts + stitchDelta(s, into);
   const change = s.stitchChanges[rowInRepeat] || 0;
   return {
     complete: false,
-    total,
+    total: last.endRow, // null while a length section is open
     row,
-    side: sideOf(row),
-    sectionIndex: i,
+    side: round ? null : ((row % 2 === 1) === (p.firstRowSide === 'RS') ? 'RS' : 'WS'),
+    inRound: round,
+    unit: rowWord(p, s),
+    sectionIndex: s.index,
     sectionCount: pl.length,
     section: s,
+    open: s.open, // "until length": the knitter taps done
+    rowInSection: into + 1,
     repeat,
     repeats: s.repeats,
     rowInRepeat,
@@ -160,22 +224,26 @@ export function formatSizes(v) {
   return `${v[0]}${v.length > 1 ? ` (${v.slice(1).join(', ')})` : ''}`;
 }
 
-// "3:+1, 5:+1, 9:-2" ↔ { 3: 1, 5: 1, 9: -2 }
+// "3:+1, 5:+1, 9:-2" ↔ { 3: 1, 5: 1, 9: -2 }; per size: "1:+3 (+1)" ↔ { 1: [3, 1] }
 export function parseChanges(text) {
   const out = {};
-  const parts = String(text || '').split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean);
+  const num = (x) => Number(x.replace('−', '-').replace(/\s/g, ''));
+  const parts = String(text || '').split(/[;\n]+|,(?![^(]*\))/).map((x) => x.trim()).filter(Boolean);
   for (const part of parts) {
-    const m = part.match(/^(?:row\s*)?(\d+)\s*[:=]?\s*([+\-−]?\s*\d+)$/i);
-    if (!m) throw new Error(`Couldn't read “${part}”. Use row:change, like 3:+1 or 5:-1.`);
-    out[m[1]] = Number(m[2].replace('−', '-').replace(/\s/g, ''));
+    const m = part.match(/^(?:row\s*|round\s*)?(\d+)\s*[:=]?\s*([+\-−]?\s*\d+)\s*(?:\(([^)]*)\))?$/i);
+    if (!m) throw new Error(`Couldn't read “${part}”. Use row:change, like 3:+1 or 5:-1, and 1:+3 (+1) for sizes.`);
+    const more = m[3] ? m[3].split(',').map((x) => x.trim()).filter(Boolean) : [];
+    if (more.some((x) => !/^[+\-−]?\s*\d+$/.test(x))) throw new Error(`Couldn't read the sizes in “${part}”.`);
+    out[m[1]] = more.length ? [num(m[2]), ...more.map(num)] : num(m[2]);
   }
   return out;
 }
 
 export function formatChanges(obj) {
+  const sg = (d) => `${d > 0 ? '+' : ''}${d}`;
   return Object.entries(obj || {})
     .sort((a, b) => Number(a[0]) - Number(b[0]))
-    .map(([r, d]) => `${r}:${d > 0 ? '+' : ''}${d}`)
+    .map(([r, d]) => `${r}:${Array.isArray(d) ? `${sg(d[0])}${d.length > 1 ? ` (${d.slice(1).map(sg).join(', ')})` : ''}` : sg(d)}`)
     .join(', ');
 }
 
@@ -183,20 +251,14 @@ export const signed = (d) => (d > 0 ? `+${d}` : d < 0 ? `−${-d}` : '0');
 
 // Stitches worked over the first `done` rows: each row produces the number of
 // stitches on the needle after it. Null when the cast-on count is unknown.
-export function stitchesWorked(p, done) {
-  if (p.castOn == null) return null;
-  let sts = p.castOn;
+export function stitchesWorked(p, done, ends = {}) {
+  if (forSize(p.castOn, p.size) == null) return null;
   let total = 0;
-  let row = 0;
-  for (const s of plan(p)) {
-    for (let r = 0; r < s.repeats; r++) {
-      for (let i = 1; i <= s.rowsPerRepeat; i++) {
-        if (row >= done) return total;
-        row++;
-        sts += s.stitchChanges[i] || 0;
-        total += sts;
-      }
-    }
+  for (const s of plan(p, ends)) {
+    if (s.startRow == null || s.startRow > done) break;
+    if (s.startSts == null) return null;
+    const n = (s.open ? done : Math.min(s.endRow, done)) - s.startRow + 1;
+    for (let k = 1; k <= n; k++) total += s.startSts + stitchDelta(s, k);
   }
   return total;
 }

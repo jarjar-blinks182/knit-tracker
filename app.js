@@ -84,14 +84,30 @@ function showList() {
   view.querySelector('#new-btn').onclick = () => openEditor(null);
 }
 
+// Total rows for the progress bar: from the pattern when there is one (null
+// while a "knit until length" section is unfinished), else the target.
+function targetOf(p) {
+  return p.pattern ? P.totalRows(p.pattern, p.sectionEnds) : p.target;
+}
+
+const unitOf = (p, n) => (p.pattern ? P.rowWord(p.pattern, null, n) : `row${n === 1 ? '' : 's'}`);
+
+function whereText(pos) {
+  if (pos.complete) return 'Pattern complete';
+  const s = pos.section;
+  if (pos.open) return `${esc(s.name)} · ${pos.rowInSection - 1} ${pos.unit}${pos.rowInSection === 2 ? '' : 's'} · until ${esc(s.until)}`;
+  if (pos.repeats > 1) return `${esc(s.name)} · repeat ${pos.repeat}/${pos.repeats} · ${pos.unit} ${pos.rowInRepeat}/${pos.rowsPerRepeat}`;
+  return `${esc(s.name)} · ${pos.unit} ${pos.rowInRepeat}/${pos.rowsPerRepeat}`;
+}
+
 function card(p) {
-  const pct = p.target ? Math.min(100, Math.round((p.rows / p.target) * 100)) : null;
-  let sub = p.target ? `${p.rows} of ${p.target} rows` : `${p.rows} row${p.rows === 1 ? '' : 's'}`;
+  const target = targetOf(p);
+  const pct = target ? Math.min(100, Math.round((p.rows / target) * 100)) : null;
+  let sub = target ? `${p.rows} of ${target} ${unitOf(p, 2)}` : `${p.rows} ${unitOf(p, p.rows)}`;
   if (p.status === 'finished') {
-    sub = `Finished${p.finishedAt ? ` ${fmtDate(p.finishedAt)}` : ''} · ${p.rows} rows`;
+    sub = `Finished${p.finishedAt ? ` ${fmtDate(p.finishedAt)}` : ''} · ${p.rows} ${unitOf(p, p.rows)}`;
   } else if (p.pattern) {
-    const pos = P.position(p.pattern, p.rows);
-    sub = pos.complete ? 'Pattern complete' : `${esc(pos.section.name)} · repeat ${pos.repeat}/${pos.repeats} · row ${pos.rowInRepeat}/${pos.rowsPerRepeat}`;
+    sub = whereText(P.position(p.pattern, p.rows, p.sectionEnds));
   }
   return `
     <a class="card ${p.status === 'finished' ? 'is-finished' : ''}" href="#/p/${p.id}">
@@ -149,7 +165,8 @@ function showCounter(id) {
     const cur = store.getProject(id);
     const rows = Math.max(0, cur.rows + d);
     if (rows === cur.rows) return;
-    store.updateProject(id, { rows });
+    // Undoing back into a "knit until length" section reopens it.
+    store.updateProject(id, { rows, ...(cur.sectionEnds ? { sectionEnds: P.pruneEnds(cur.sectionEnds, rows) } : {}) });
     if (navigator.vibrate) navigator.vibrate(d > 0 ? 15 : [10, 40, 10]);
     paintCounter(store.getProject(id));
   };
@@ -158,9 +175,18 @@ function showCounter(id) {
   view.querySelector('#minus').onclick = () => bump(-1);
   view.querySelector('#edit').onclick = () => openEditor(id);
   view.querySelector('#finish').onclick = () => toggleFinished(id);
+  view.querySelector('#pattern-panel').onclick = (e) => {
+    if (!e.target.closest('#section-done')) return;
+    const cur = store.getProject(id);
+    const pos = P.position(cur.pattern, cur.rows, cur.sectionEnds);
+    if (!pos.open) return;
+    store.updateProject(id, { sectionEnds: { ...(cur.sectionEnds || {}), [pos.sectionIndex]: cur.rows } });
+    if (navigator.vibrate) navigator.vibrate([15, 40, 15]);
+    paintCounter(store.getProject(id));
+  };
   view.querySelector('#reset').onclick = async () => {
     if (await ask('Reset the row count to 0?', 'Reset')) {
-      store.updateProject(id, { rows: 0 });
+      store.updateProject(id, { rows: 0, sectionEnds: {} });
       paintCounter(store.getProject(id));
     }
   };
@@ -180,39 +206,58 @@ function showCounter(id) {
 function paintCounter(p) {
   setChrome(p.name, true);
   view.querySelector('#count').textContent = p.rows;
-  view.querySelector('#count-label').textContent = p.target ? `of ${p.target} rows done` : (p.rows === 1 ? 'row done' : 'rows done');
+  const target = targetOf(p);
+  const pos = p.pattern ? P.position(p.pattern, p.rows, p.sectionEnds) : null;
+  view.querySelector('#count-label').textContent = target ? `of ${target} ${unitOf(p, 2)} done` : `${unitOf(p, p.rows)} done`;
   view.querySelector('#pattern-btn').textContent = p.pattern ? 'Edit pattern' : 'Set up pattern';
   view.querySelector('#finish').textContent = p.status === 'finished' ? 'Mark as in progress' : 'Mark as finished';
-  view.querySelector('#finish').className = p.status !== 'finished' && p.pattern && p.rows >= P.totalRows(p.pattern) ? 'primary' : 'ghost';
+  view.querySelector('#finish').className = p.status !== 'finished' && pos?.complete ? 'primary' : 'ghost';
   view.querySelector('#details-card').innerHTML = detailsSummary(p);
   const rep = view.querySelector('#repeat');
   const next = view.querySelector('#next');
   const panel = view.querySelector('#pattern-panel');
-  const pos = p.pattern ? P.position(p.pattern, p.rows) : null;
   next.hidden = !pos;
   panel.hidden = !pos;
   if (pos) {
+    const u = pos.unit;
+    const U = u[0].toUpperCase() + u.slice(1);
     next.innerHTML = pos.complete
       ? 'Pattern complete'
-      : `Next: row ${pos.row} <span class="side side-${pos.side}">${pos.side}</span>`;
+      : `Next: ${u} ${pos.row}${pos.side ? ` <span class="side side-${pos.side}">${pos.side}</span>` : ''}`;
+    const s = pos.section;
+    let grid;
+    if (pos.complete) {
+      grid = '';
+    } else if (pos.open) {
+      const doneIn = pos.rowInSection - 1;
+      grid = `
+        <div><span class="pp-label">${U}s so far</span><span class="pp-val">${doneIn}${s.estimate ? ` <small>of about ${s.estimate}</small>` : ''}</span></div>
+        ${pos.sts != null ? `<div><span class="pp-label">On needle</span><span class="pp-val">${pos.sts} <small>sts</small></span></div>` : ''}`;
+    } else {
+      grid = `
+        ${pos.repeats > 1 ? `<div><span class="pp-label">Repeat</span><span class="pp-val">${pos.repeat} <small>of ${pos.repeats}</small></span></div>` : ''}
+        <div><span class="pp-label">${U}</span><span class="pp-val">${pos.rowInRepeat} <small>of ${pos.rowsPerRepeat}</small></span></div>
+        ${pos.sts != null ? `<div><span class="pp-label">On needle</span><span class="pp-val">${pos.sts} <small>sts</small></span></div>` : ''}`;
+    }
     panel.innerHTML = pos.complete ? `
-      <div class="pp-main"><strong>All ${pos.total} rows done.</strong>${pos.sts != null ? ` ${pos.sts} sts on the needle.` : ''}</div>
+      <div class="pp-main"><strong>All ${pos.total} ${pos.unit} done.</strong>${pos.sts != null ? ` ${pos.sts} sts on the needle.` : ''}</div>
       ${p.pattern.sections.at(-1).note ? `<div class="pp-note">${esc(p.pattern.sections.at(-1).note)}</div>` : ''}` : `
       <div class="pp-head">
-        <span class="pp-section">${esc(pos.section.name)}</span>
+        <span class="pp-section">${esc(s.name)}</span>
         <span class="muted">section ${pos.sectionIndex + 1} of ${pos.sectionCount}</span>
       </div>
-      <div class="pp-grid">
-        <div><span class="pp-label">Repeat</span><span class="pp-val">${pos.repeat} <small>of ${pos.repeats}</small></span></div>
-        <div><span class="pp-label">Row</span><span class="pp-val">${pos.rowInRepeat} <small>of ${pos.rowsPerRepeat}</small></span></div>
-        ${pos.sts != null ? `<div><span class="pp-label">On needle</span><span class="pp-val">${pos.sts} <small>sts</small></span></div>` : ''}
-      </div>
-      <div class="pp-change ${pos.change ? (pos.change > 0 ? 'inc' : 'dec') : ''}">
-        ${pos.change
-          ? `This row: <strong>${pos.change > 0 ? 'increase' : 'decrease'} ${P.signed(pos.change)}</strong>${pos.after != null ? ` → ${pos.after} sts` : ''}`
-          : 'This row: no increases or decreases'}
-      </div>
-      ${pos.section.note ? `<div class="pp-note">${esc(pos.section.note)}</div>` : ''}`;
+      <div class="pp-grid">${grid}</div>
+      ${pos.open ? `
+        <div class="pp-until">
+          <span>Knit until <strong>${esc(s.until)}</strong></span>
+          <button type="button" class="primary" id="section-done" ${pos.rowInSection > 1 ? '' : 'disabled'}>Reached it, next section</button>
+        </div>` : `
+        <div class="pp-change ${pos.change ? (pos.change > 0 ? 'inc' : 'dec') : ''}">
+          ${pos.change
+            ? `This ${u}: <strong>${pos.change > 0 ? 'increase' : 'decrease'} ${P.signed(pos.change)}</strong>${pos.after != null ? ` → ${pos.after} sts` : ''}`
+            : `This ${u}: no increases or decreases`}
+        </div>`}
+      ${s.note ? `<div class="pp-note">${esc(s.note)}</div>` : ''}`;
   }
   if (p.repeat && !pos) {
     const done = Math.floor(p.rows / p.repeat);
@@ -222,8 +267,8 @@ function paintCounter(p) {
     rep.hidden = true;
   }
   const prog = view.querySelector('#progress');
-  prog.hidden = !p.target;
-  if (p.target) prog.firstElementChild.style.width = `${Math.min(100, (p.rows / p.target) * 100)}%`;
+  prog.hidden = !target;
+  if (target) prog.firstElementChild.style.width = `${Math.min(100, (p.rows / target) * 100)}%`;
   const notes = view.querySelector('#notes');
   if (document.activeElement !== notes && notes.value !== (p.notes || '')) notes.value = p.notes || '';
 }
@@ -418,7 +463,7 @@ function showDetails(id) {
 // ---------- stats ----------
 
 function projectStitches(p) {
-  if (p.pattern) return P.stitchesWorked(p.pattern, p.rows);
+  if (p.pattern) return P.stitchesWorked(p.pattern, p.rows, p.sectionEnds);
   if (p.stitchesPerRow) return p.stitchesPerRow * p.rows;
   return null;
 }
@@ -493,14 +538,15 @@ function showPatternSetup(id) {
       </details>
 
       <div class="setup-fields">
-        <fieldset class="craft">
+        <label class="check"><input type="checkbox" id="in-round"> Worked in the round</label>
+        <fieldset class="craft" id="side-field">
           <legend>First row is</legend>
           <label><input type="radio" name="side" value="RS" id="side-rs"> Right side (RS)</label>
           <label><input type="radio" name="side" value="WS" id="side-ws"> Wrong side (WS)</label>
         </fieldset>
         <div class="two">
           <label>Cast-on stitches <small>(optional)</small>
-            <input id="cast-on" type="number" min="0" inputmode="numeric">
+            <input id="cast-on" inputmode="numeric" placeholder="e.g. 87 (99)" autocomplete="off">
           </label>
           <label>Sizes <small>(optional)</small>
             <input id="sizes" placeholder="e.g. S, M, L" autocomplete="off">
@@ -513,7 +559,8 @@ function showPatternSetup(id) {
 
       <h2>Sections</h2>
       <p class="muted small">For numbers that change by size, write them like the pattern does: <code>14 (21)</code>.
-        Stitch changes are <code>row:change</code> within one repeat, like <code>1:+1, 3:+1, 5:+1</code>.</p>
+        Stitch changes are <code>row:change</code> within one repeat, like <code>1:+1, 3:+1, 5:+1</code>.
+        For “repeat until 11 cm”, fill in <em>Knit until</em>; the counter lets you say when you've reached it.</p>
       <div id="sections" class="sections"></div>
       <button type="button" class="ghost" id="add-section">+ Add section</button>
 
@@ -545,7 +592,14 @@ function showPatternSetup(id) {
         <label>Stitches at end <small>(from pattern)</small> <input class="s-expected" inputmode="numeric" value="${esc(P.formatSizes(s.expectedEnd))}"></label>
       </div>
       <label>Stitch changes <input class="s-changes" placeholder="e.g. 1:+1, 3:+1, 5:+1" value="${esc(P.formatChanges(s.stitchChanges))}"></label>
+      <div class="until-row">
+        <label>Knit until <small>(length, instead of repeats)</small>
+          <input class="s-until" placeholder="e.g. 11 cm (4.5 in)" value="${esc(Array.isArray(s.untilLength) ? s.untilLength.join(' | ') : s.untilLength || '')}"></label>
+        <label>About how many rows <small>(optional)</small>
+          <input class="s-estimate" inputmode="numeric" value="${esc(P.formatSizes(s.estimate))}"></label>
+      </div>
       <label>Note <small>(optional)</small> <input class="s-note" value="${esc(s.note || '')}"></label>`;
+    if (typeof s.inTheRound === 'boolean') el.dataset.inTheRound = String(s.inTheRound);
     el.querySelector('.s-remove').onclick = () => { el.remove(); refresh(); };
     sectionsEl.append(el);
   }
@@ -553,7 +607,9 @@ function showPatternSetup(id) {
   function fill(p) {
     $('#side-ws').checked = p.firstRowSide === 'WS';
     $('#side-rs').checked = p.firstRowSide !== 'WS';
-    $('#cast-on').value = p.castOn ?? '';
+    $('#cast-on').value = P.formatSizes(p.castOn);
+    $('#in-round').checked = !!p.inTheRound;
+    $('#side-field').hidden = !!p.inTheRound;
     $('#sizes').value = (p.sizes || []).join(', ');
     syncSizes(p.size || 0);
     sectionsEl.innerHTML = '';
@@ -578,8 +634,12 @@ function showPatternSetup(id) {
       let stitchChanges;
       try { stitchChanges = P.parseChanges(el.querySelector('.s-changes').value); }
       catch (e) { throw new Error(`${name}: ${e.message}`); }
+      const until = el.querySelector('.s-until').value.split('|').map((x) => x.trim()).filter(Boolean);
       return {
         name,
+        untilLength: until.length > 1 ? until : until[0] || null,
+        estimate: P.parseSizes(el.querySelector('.s-estimate').value),
+        ...(el.dataset.inTheRound ? { inTheRound: el.dataset.inTheRound === 'true' } : {}),
         rowsPerRepeat: el.querySelector('.s-rows').value,
         repeats: P.parseSizes(el.querySelector('.s-repeats').value) ?? 1,
         expectedEnd: P.parseSizes(el.querySelector('.s-expected').value),
@@ -592,7 +652,8 @@ function showPatternSetup(id) {
       sizes,
       size: sizes.length > 1 ? Number($('#size').value) : 0,
       firstRowSide: $('#side-ws').checked ? 'WS' : 'RS',
-      castOn: $('#cast-on').value === '' ? null : $('#cast-on').value,
+      inTheRound: $('#in-round').checked,
+      castOn: P.parseSizes($('#cast-on').value),
       sections,
     });
   }
@@ -601,22 +662,26 @@ function showPatternSetup(id) {
     const out = $('#summary');
     try {
       const p = read();
-      const pl = P.plan(p);
+      const pl = P.plan(p, P.pruneEnds(proj.sectionEnds, proj.rows));
       const bad = pl.filter((s) => s.matches === false);
+      const total = pl.at(-1).endRow;
+      const unit = P.rowWord(p, null, 2);
       out.innerHTML = `
         <div class="table-wrap"><table>
-          <thead><tr><th>Section</th><th>Rows</th><th>Stitches</th></tr></thead>
+          <thead><tr><th>Section</th><th>${unit[0].toUpperCase() + unit.slice(1)}</th><th>Stitches</th></tr></thead>
           <tbody>${pl.map((s) => `
             <tr class="${s.matches === false ? 'warn' : ''}">
-              <td>${esc(s.name)}<br><small>${s.repeats} × ${s.rowsPerRepeat} rows</small></td>
-              <td class="num">${s.startRow}–${s.endRow}</td>
+              <td>${esc(s.name)}<br><small>${s.until
+                ? `until ${esc(s.until)}${s.repeats != null ? ` (done: ${s.repeats * s.rowsPerRepeat})` : ''}`
+                : `${s.repeats} × ${s.rowsPerRepeat} ${P.rowWord(p, s, s.rowsPerRepeat)}`}</small></td>
+              <td class="num">${s.startRow ?? '?'}–${s.endRow ?? '?'}</td>
               <td class="num">${s.endSts == null ? '–' : `${s.startSts} → ${s.endSts}`}
                 ${s.matches === true ? '<span class="ok" title="Matches the pattern">✓</span>' : ''}
                 ${s.matches === false ? `<br><small>pattern says ${s.expected}</small>` : ''}</td>
             </tr>`).join('')}
           </tbody>
         </table></div>
-        <p class="${bad.length ? 'msg error' : 'msg'}">${pl.at(-1).endRow} rows in total.
+        <p class="${bad.length ? 'msg error' : 'msg'}">${total != null ? `${total} ${unit} in total.` : `The total depends on the “knit until” sections.`}
           ${bad.length ? `${bad.length} section${bad.length > 1 ? 's don’t' : ' doesn’t'} match the pattern’s stitch count. Check the highlighted rows.` : ''}</p>`;
       return p;
     } catch (e) {
@@ -628,6 +693,7 @@ function showPatternSetup(id) {
   view.querySelector('.setup').addEventListener('input', (e) => {
     if (e.target.id === 'json') return;
     if (e.target.id === 'sizes') syncSizes();
+    if (e.target.id === 'in-round') $('#side-field').hidden = e.target.checked;
     refresh();
   });
   $('#add-section').onclick = () => { sectionRow(); refresh(); };
@@ -651,7 +717,7 @@ function showPatternSetup(id) {
   $('#save-pattern').onclick = () => {
     const p = refresh();
     if (!p) return;
-    store.updateProject(id, { pattern: p, target: P.totalRows(p), repeat: null });
+    store.updateProject(id, { pattern: p, target: null, repeat: null, sectionEnds: P.pruneEnds(proj.sectionEnds, proj.rows) });
     location.hash = `#/p/${id}`;
   };
   $('#remove-pattern')?.addEventListener('click', async () => {
