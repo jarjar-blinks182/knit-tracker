@@ -156,6 +156,9 @@ export function friendly(e) {
     'auth/too-many-requests': 'Too many tries. Wait a minute and try again.',
     'auth/network-request-failed': 'Can’t reach the server. Check your connection.',
     'auth/missing-password': 'Enter your password.',
+    'auth/admin-restricted-operation': 'New accounts are turned off. Turn sign-up back on in Firebase (Authentication → Settings) to add one.',
+    'auth/operation-not-allowed': 'Email/password sign in isn’t enabled in Firebase yet.',
+    'auth/unauthorized-domain': 'This site isn’t in Firebase’s authorized domains yet.',
     'permission-denied': 'The server refused the change. Check firestore.rules is published.',
     unavailable: 'Can’t reach the server right now.',
   };

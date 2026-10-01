@@ -1,7 +1,7 @@
 // Offline support: the app shell is cached on install. App files (including
 // the Firebase SDK in vendor/) are served network-first so updates show up right away, falling back to the cache offline.
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const SHELL = [
   './', 'index.html', 'style.css', 'app.js', 'store.js', 'sync.js', 'pattern.js', 'config.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png',
