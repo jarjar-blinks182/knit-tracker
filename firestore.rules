@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Each signed-in person can only read and write their own projects.
+    match /users/{uid}/projects/{projectId} {
+      allow read, create: if request.auth != null && request.auth.uid == uid;
+      // Refuse a write that is older than what's already saved, so a device
+      // that was offline can't overwrite newer changes from another device.
+      allow update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.updatedAt >= resource.data.updatedAt;
+      allow delete: if false; // deletes are synced as a "deleted" flag
+    }
+  }
+}

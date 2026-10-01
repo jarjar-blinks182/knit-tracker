@@ -1,0 +1,2 @@
+Firebase JS SDK 12.19.0 browser builds from the npm package, imports rewritten to be relative.
+License: Apache-2.0 (https://github.com/firebase/firebase-js-sdk/blob/main/LICENSE)

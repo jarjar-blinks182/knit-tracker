@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Row Counter</title>
+  <meta name="theme-color" content="#b4532a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Rows">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#/" class="back" id="back" hidden aria-label="All projects">‹ Projects</a>
+    <h1 id="title">Projects</h1>
+    <a href="#/settings" class="sync-badge" id="sync-badge" title="Sync">●</a>
+  </header>
+
+  <main id="view"></main>
+
+  <dialog id="edit-dialog">
+    <form method="dialog" id="edit-form">
+      <h2 id="edit-heading">New project</h2>
+      <label>Name
+        <input name="name" required maxlength="80" autocomplete="off" placeholder="Cabled sweater">
+      </label>
+      <fieldset class="craft">
+        <legend>Craft</legend>
+        <label><input type="radio" name="craft" value="knit" checked> Knitting</label>
+        <label><input type="radio" name="craft" value="crochet"> Crochet</label>
+      </fieldset>
+      <div class="two">
+        <label>Target rows <small>(optional)</small>
+          <input name="target" type="number" min="1" inputmode="numeric">
+        </label>
+        <label>Rows per repeat <small>(optional)</small>
+          <input name="repeat" type="number" min="1" inputmode="numeric">
+        </label>
+      </div>
+      <label id="spr-row">Stitches per row <small>(optional, for stats)</small>
+        <input name="stitchesPerRow" type="number" min="1" inputmode="numeric">
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="danger" id="delete-btn" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button value="save" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="ask-dialog">
+    <form method="dialog">
+      <p id="ask-text"></p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button value="cancel" id="ask-cancel">Cancel</button>
+        <button value="ok" class="primary" id="ask-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
