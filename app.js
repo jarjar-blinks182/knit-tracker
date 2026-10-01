@@ -162,6 +162,7 @@ function showCounter(id) {
         <button id="edit" class="ghost">Edit project</button>
         <a id="pattern-btn" class="ghost button" href="#/p/${p.id}/pattern"></a>
         <button id="reset" class="ghost">Reset count</button>
+        <button id="again" class="ghost">Make again</button>
       </div>
     </section>`;
 
@@ -179,6 +180,7 @@ function showCounter(id) {
   view.querySelector('#minus').onclick = () => bump(-1);
   view.querySelector('#edit').onclick = () => openEditor(id);
   view.querySelector('#finish').onclick = () => toggleFinished(id);
+  view.querySelector('#again').onclick = () => makeAgain(id);
   view.querySelector('#pattern-panel').onclick = (e) => {
     if (!e.target.closest('#section-done')) return;
     const cur = store.getProject(id);
@@ -397,6 +399,23 @@ const WEIGHTS = ['Lace', 'Fingering', 'Sport', 'DK', 'Worsted', 'Aran', 'Bulky',
 function fmtDate(iso) {
   try { return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); }
   catch { return ''; }
+}
+
+// New project with the same pattern (and size), count at 0, yarn and needle
+// blank. Opens the details page so the new yarn can go straight in.
+async function makeAgain(id) {
+  const p = store.getProject(id);
+  if (!p || !await ask(`Start a new “${p.name}” with the same pattern? Row count starts at 0 and you can add the new yarn next.`, 'Make again')) return;
+  const copy = store.createProject({
+    name: p.name,
+    craft: p.craft,
+    target: p.target ?? null,
+    repeat: p.repeat ?? null,
+    stitchesPerRow: p.stitchesPerRow ?? null,
+    link: p.link || '',
+    pattern: p.pattern ? structuredClone(p.pattern) : null,
+  });
+  location.hash = `#/p/${copy.id}/details`;
 }
 
 function toggleFinished(id) {
