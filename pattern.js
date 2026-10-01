@@ -86,6 +86,8 @@ export function normalize(input) {
   });
   return {
     name: raw.name ? String(raw.name).slice(0, 80) : '',
+    // Needles or hook the pattern calls for, as written (optional).
+    needle: (Array.isArray(raw.needle) ? raw.needle.join(', ') : String(raw.needle ?? '')).trim().slice(0, 120),
     sizes,
     size: Math.min(int(raw.size) ?? 0, nSizes - 1),
     firstRowSide: String(raw.firstRowSide || 'RS').toUpperCase() === 'WS' ? 'WS' : 'RS',

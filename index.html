@@ -45,6 +45,20 @@
       <label id="spr-row">Stitches per row <small>(optional, for stats)</small>
         <input name="stitchesPerRow" type="number" min="1" inputmode="numeric">
       </label>
+      <div id="new-details">
+        <label><span id="new-needle-label">Needle size</span> <small>(optional)</small>
+          <input name="needle" autocomplete="off" placeholder="e.g. 3.5 mm (US 4), 80 cm circular">
+        </label>
+        <fieldset class="yarn-fields">
+          <legend>Yarn <small>(optional)</small></legend>
+          <div class="two">
+            <label>Brand <input name="yarnBrand" autocomplete="off" placeholder="e.g. Gepard"></label>
+            <label>Yarn <input name="yarnName" autocomplete="off" placeholder="e.g. Eco Cashmere Vintage"></label>
+            <label>Color <input name="yarnColor" autocomplete="off" placeholder="e.g. 126"></label>
+            <label>Weight <select name="yarnWeight" id="new-weight"></select></label>
+          </div>
+        </fieldset>
+      </div>
       <details class="paste" id="new-paste">
         <summary>Paste pattern JSON <small>(optional)</small></summary>
         <textarea name="patternJson" rows="5" spellcheck="false" placeholder='{ "castOn": 4, "sections": [ … ] }'></textarea>

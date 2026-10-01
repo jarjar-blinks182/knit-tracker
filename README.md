@@ -10,7 +10,7 @@ devices.
 - Multiple projects, each with a row count, optional target rows (progress bar)
   and optional rows-per-repeat ("3 / 8 into repeat 2")
 - Big tap area to add a row, −1 to undo, reset
-- **Make again**: start a fresh copy of a project (same pattern and size, count at 0, yarn and needles blank), handy for remaking with different yarn
+- **Make again**: start a fresh copy of a project (same pattern and size, count at 0, yarn blank, needle size from the pattern), handy for remaking with different yarn
 - Optional pattern setup: sections (e.g. increases, middle, decreases), each a
   block of rows repeated N times with stitch increases/decreases on given rows.
   The counter then shows the section, repeat, row in the repeat, RS or WS, the
@@ -22,7 +22,8 @@ devices.
   the counter keeps counting and you tap "Reached it" to move to the next
   section. Undoing back past that point reopens the section.
 - Paste a pattern as JSON instead of typing it in (see below), with a check
-  against the stitch counts the pattern states
+  against the stitch counts the pattern states. When creating a project, the
+  needle size fills in from the JSON; yarn is typed in on the same screen.
 - Notes per project
 - Keeps the screen awake while a counter is open (where the browser supports it)
 - Works offline; download/restore a JSON backup
@@ -105,6 +106,7 @@ for my row counter. Reply with only the JSON, in this shape:
 
 {
   "name": "Pattern name",
+  "needle": "4 mm (US 6) circular, 40 cm",
   "sizes": ["S", "M"],
   "firstRowSide": "RS",
   "inTheRound": false,
@@ -143,6 +145,9 @@ Rules:
   to do on that row, copied as written (expand "work as row 1" into the actual
   text). Use "*" for the instruction that applies to every other row of the
   section. Text that differs by size is an array, one entry per size.
+- "needle" is the needle or hook size the pattern recommends, as one short
+  line (size, US size if given, and cable length or type). Leave it out if the
+  pattern doesn't say.
 - Put short reminders (like "then cast off") in "note".
 - Check your numbers: castOn plus all the changes should match each
   expectedEnd. If they don't, re-read the pattern.

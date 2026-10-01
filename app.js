@@ -304,6 +304,11 @@ function openEditor(id) {
   document.getElementById('delete-btn').hidden = !p;
   form.querySelector('.two').hidden = !!p?.pattern;
   form.querySelector('#spr-row').hidden = !!p?.pattern;
+  // Needle and yarn go in when creating; afterwards they live on the details page.
+  form.querySelector('#new-details').hidden = !!p;
+  form.querySelector('#new-weight').innerHTML = `<option value=""></option>${WEIGHTS.map((w) => `<option>${w}</option>`).join('')}`;
+  autoNeedle = '';
+  syncToolLabel();
   // Pattern JSON can be pasted straight in when creating a project.
   form.querySelector('#new-paste').hidden = !!p;
   form.querySelector('#new-paste').open = false;
@@ -315,12 +320,23 @@ function openEditor(id) {
     form.elements.repeat.value = p.repeat ?? '';
     form.elements.stitchesPerRow.value = p.stitchesPerRow ?? '';
   }
+  syncToolLabel();
   dialog.showModal();
   if (!p) form.elements.name.focus();
 }
 
 // Pasted pattern JSON from the New project dialog, read on submit.
 let pendingPattern = null;
+// Needle size last filled in from pasted JSON, so it's only replaced while
+// it hasn't been typed over.
+let autoNeedle = '';
+
+function syncToolLabel() {
+  const crochet = form.elements.craft.value === 'crochet';
+  form.querySelector('#new-needle-label').textContent = crochet ? 'Hook size' : 'Needle size';
+  form.elements.needle.placeholder = crochet ? 'e.g. 4 mm (G-6)' : 'e.g. 3.5 mm (US 4), 80 cm circular';
+}
+form.querySelectorAll('input[name=craft]').forEach((r) => r.addEventListener('change', syncToolLabel));
 
 // Tolerates a pasted ```json fenced block; throws with a readable message.
 function parsePatternJson(text) {
@@ -339,6 +355,8 @@ form.elements.patternJson.addEventListener('input', () => {
   try {
     const p = parsePatternJson(form.elements.patternJson.value);
     if (p.name && !form.elements.name.value.trim()) form.elements.name.value = p.name;
+    const needle = form.elements.needle;
+    if (p.needle && (!needle.value.trim() || needle.value === autoNeedle)) needle.value = autoNeedle = p.needle;
     msg.textContent = `${p.sections.length} section${p.sections.length === 1 ? '' : 's'} found.`;
   } catch { /* reported on save */ }
 });
@@ -367,6 +385,16 @@ dialog.addEventListener('close', () => {
     repeat: num(form.elements.repeat.value),
     stitchesPerRow: num(form.elements.stitchesPerRow.value),
   };
+  if (!editingId) {
+    fields.needle = form.elements.needle.value.trim();
+    const yarn = {
+      brand: form.elements.yarnBrand.value.trim(),
+      name: form.elements.yarnName.value.trim(),
+      color: form.elements.yarnColor.value.trim(),
+      weight: form.elements.yarnWeight.value,
+    };
+    fields.yarns = yarn.brand || yarn.name || yarn.color || yarn.weight ? [yarn] : [];
+  }
   if (editingId) {
     if (store.getProject(editingId)?.pattern) { delete fields.target; delete fields.repeat; delete fields.stitchesPerRow; }
     store.updateProject(editingId, fields);
@@ -401,8 +429,9 @@ function fmtDate(iso) {
   catch { return ''; }
 }
 
-// New project with the same pattern (and size), count at 0, yarn and needle
-// blank. Opens the details page so the new yarn can go straight in.
+// New project with the same pattern (and size), count at 0, yarn blank and
+// needle size from the pattern if it gives one. Opens the details page so the
+// new yarn can go straight in.
 async function makeAgain(id) {
   const p = store.getProject(id);
   if (!p || !await ask(`Start a new “${p.name}” with the same pattern? Row count starts at 0 and you can add the new yarn next.`, 'Make again')) return;
@@ -413,6 +442,7 @@ async function makeAgain(id) {
     repeat: p.repeat ?? null,
     stitchesPerRow: p.stitchesPerRow ?? null,
     link: p.link || '',
+    needle: p.pattern?.needle || '',
     pattern: p.pattern ? structuredClone(p.pattern) : null,
   });
   location.hash = `#/p/${copy.id}/details`;
@@ -597,6 +627,8 @@ function showPatternSetup(id) {
   setChrome('Pattern setup', true);
   backEl.href = `#/p/${id}`;
   backEl.textContent = '‹ Counter';
+  // Pattern fields with no input on this page, kept through a save.
+  let meta = { name: proj.pattern?.name || '', needle: proj.pattern?.needle || '' };
 
   view.innerHTML = `
     <section class="setup">
@@ -725,7 +757,8 @@ function showPatternSetup(id) {
       };
     });
     return P.normalize({
-      name: proj.pattern?.name || '',
+      name: meta.name,
+      needle: meta.needle,
       sizes,
       size: sizes.length > 1 ? Number($('#size').value) : 0,
       firstRowSide: $('#side-ws').checked ? 'WS' : 'RS',
@@ -780,7 +813,9 @@ function showPatternSetup(id) {
     try {
       const p = parsePatternJson($('#json').value);
       fill(p);
+      meta = { name: p.name, needle: p.needle };
       if (p.name && (proj.name === 'Untitled' || !proj.name)) store.updateProject(id, { name: p.name });
+      if (p.needle && !store.getProject(id).needle) store.updateProject(id, { needle: p.needle });
       msg.className = 'msg';
       const many = p.sizes.length > 1;
       msg.textContent = `Loaded ${p.sections.length} section${p.sections.length === 1 ? '' : 's'}. ${many ? 'Pick the size you\'re making, check' : 'Check'} the sections below, then save.`;
