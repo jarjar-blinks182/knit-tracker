@@ -10,6 +10,8 @@ devices.
 - Multiple projects, each with a row count, optional target rows (progress bar)
   and optional rows-per-repeat ("3 / 8 into repeat 2")
 - Big tap area to add a row, −1 to undo, reset
+- Optional second counter per project (stitches or repeats within a row), with its
+  own name; it can clear itself each time you add a row
 - **Pattern library** (Patterns, on the project list): every pattern you paste
   or set up is saved there, and a new project can start from one. Rename,
   delete, copy a pattern's JSON to share it, paste JSON straight into the

@@ -159,6 +159,21 @@ function showCounter(id) {
         <button id="minus" class="ghost" aria-label="Remove a row">− 1</button>
         <button id="plus2" class="primary" aria-label="Add a row">+ 1</button>
       </div>
+      <div class="counter2" id="counter2" hidden>
+        <div class="c2-head">
+          <input id="c2-label" class="c2-label" maxlength="40" placeholder="Second counter" aria-label="Second counter name">
+          <button id="c2-remove" class="ghost c2-x" aria-label="Remove second counter">×</button>
+        </div>
+        <div class="c2-body">
+          <button id="c2-minus" class="ghost" aria-label="Second counter minus 1">−</button>
+          <span class="c2-count" id="c2-count"></span>
+          <button id="c2-plus" class="primary" aria-label="Second counter plus 1">+</button>
+        </div>
+        <div class="c2-foot">
+          <label class="c2-auto"><input type="checkbox" id="c2-auto"> Clear on each new ${unitOf(p, 1)}</label>
+          <button id="c2-reset" class="ghost">Reset</button>
+        </div>
+      </div>
       <label class="notes">Notes
         <textarea id="notes" rows="4" placeholder="Anything to remember about this project…"></textarea>
       </label>
@@ -169,7 +184,11 @@ function showCounter(id) {
         <a id="pattern-btn" class="ghost button" href="#/p/${p.id}/pattern"></a>
         <button id="reset" class="ghost">Reset count</button>
         <button id="again" class="ghost">Make again</button>
+        <button id="c2-add" class="ghost">Add second counter</button>
       </div>
+      <label class="notes watched">Watched while knitting
+        <textarea id="watched" rows="3" placeholder="Movies and shows, one per line…"></textarea>
+      </label>
     </section>`;
 
   const bump = (d) => {
@@ -177,7 +196,9 @@ function showCounter(id) {
     const rows = Math.max(0, cur.rows + d);
     if (rows === cur.rows) return;
     // Undoing back into a "knit until length" section reopens it.
-    store.updateProject(id, { rows, ...(cur.sectionEnds ? { sectionEnds: P.pruneEnds(cur.sectionEnds, rows) } : {}) });
+    // A new row clears the second counter when it's set to.
+    const c2 = d > 0 && cur.counter2?.perRow && cur.counter2.count ? { counter2: { ...cur.counter2, count: 0 } } : {};
+    store.updateProject(id, { rows, ...c2, ...(cur.sectionEnds ? { sectionEnds: P.pruneEnds(cur.sectionEnds, rows) } : {}) });
     if (navigator.vibrate) navigator.vibrate(d > 0 ? 15 : [10, 40, 10]);
     paintCounter(store.getProject(id));
   };
@@ -187,6 +208,27 @@ function showCounter(id) {
   view.querySelector('#edit').onclick = () => openEditor(id);
   view.querySelector('#finish').onclick = () => toggleFinished(id);
   view.querySelector('#again').onclick = () => makeAgain(id);
+  // Second counter: stitches or repeats within a row, its own count.
+  const c2set = (fields) => {
+    const cur = store.getProject(id);
+    store.updateProject(id, { counter2: { count: 0, label: '', perRow: true, ...(cur.counter2 || {}), ...fields } });
+    paintCounter(store.getProject(id));
+  };
+  const c2bump = (d) => {
+    const c = store.getProject(id).counter2;
+    const count = Math.max(0, (c?.count || 0) + d);
+    if (count === c?.count) return;
+    if (navigator.vibrate) navigator.vibrate(d > 0 ? 10 : [8, 30, 8]);
+    c2set({ count });
+  };
+  view.querySelector('#c2-add').onclick = () => c2set({});
+  view.querySelector('#c2-plus').onclick = () => c2bump(1);
+  view.querySelector('#c2-minus').onclick = () => c2bump(-1);
+  view.querySelector('#c2-reset').onclick = () => c2set({ count: 0 });
+  view.querySelector('#c2-auto').onchange = (e) => c2set({ perRow: e.target.checked });
+  view.querySelector('#c2-remove').onclick = () => { store.updateProject(id, { counter2: null }); paintCounter(store.getProject(id)); };
+  const c2label = view.querySelector('#c2-label');
+  c2label.onchange = () => c2set({ label: c2label.value.trim() });
   view.querySelector('#pattern-panel').onclick = (e) => {
     if (!e.target.closest('#section-done')) return;
     const cur = store.getProject(id);
@@ -196,21 +238,25 @@ function showCounter(id) {
     if (navigator.vibrate) navigator.vibrate([15, 40, 15]);
     paintCounter(store.getProject(id));
   };
+  const cur0 = () => store.getProject(id);
   view.querySelector('#reset').onclick = async () => {
     if (await ask('Reset the row count to 0?', 'Reset')) {
-      store.updateProject(id, { rows: 0, sectionEnds: {} });
+      store.updateProject(id, { rows: 0, sectionEnds: {}, ...(cur0().counter2 ? { counter2: { ...cur0().counter2, count: 0 } } : {}) });
       paintCounter(store.getProject(id));
     }
   };
 
-  const notes = view.querySelector('#notes');
-  notes.value = p.notes || '';
-  let t;
-  notes.oninput = () => {
-    clearTimeout(t);
-    t = setTimeout(() => store.updateProject(id, { notes: notes.value }), 500);
-  };
-  notes.onblur = () => { clearTimeout(t); if (notes.value !== store.getProject(id)?.notes) store.updateProject(id, { notes: notes.value }); };
+  // Free-text boxes saved as you type: notes and what was watched.
+  for (const key of ['notes', 'watched']) {
+    const box = view.querySelector(`#${key}`);
+    box.value = p[key] || '';
+    let t;
+    box.oninput = () => {
+      clearTimeout(t);
+      t = setTimeout(() => store.updateProject(id, { [key]: box.value }), 500);
+    };
+    box.onblur = () => { clearTimeout(t); if (box.value !== (store.getProject(id)?.[key] || '')) store.updateProject(id, { [key]: box.value }); };
+  }
 
   paintCounter(p);
 }
@@ -282,8 +328,19 @@ function paintCounter(p) {
   const prog = view.querySelector('#progress');
   prog.hidden = !target;
   if (target) prog.firstElementChild.style.width = `${Math.min(100, (p.rows / target) * 100)}%`;
-  const notes = view.querySelector('#notes');
-  if (document.activeElement !== notes && notes.value !== (p.notes || '')) notes.value = p.notes || '';
+  const c2 = p.counter2;
+  view.querySelector('#counter2').hidden = !c2;
+  view.querySelector('#c2-add').hidden = !!c2;
+  if (c2) {
+    view.querySelector('#c2-count').textContent = c2.count || 0;
+    view.querySelector('#c2-auto').checked = c2.perRow !== false;
+    const lbl = view.querySelector('#c2-label');
+    if (document.activeElement !== lbl) lbl.value = c2.label || '';
+  }
+  for (const key of ['notes', 'watched']) {
+    const box = view.querySelector(`#${key}`);
+    if (document.activeElement !== box && box.value !== (p[key] || '')) box.value = p[key] || '';
+  }
 }
 
 // ---------- confirm / notice (in-app, since some views block confirm()) ----------

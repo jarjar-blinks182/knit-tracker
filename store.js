@@ -66,6 +66,7 @@ export function createProject(fields) {
     target: null,
     repeat: null,
     notes: '',
+    watched: '', // movies and shows watched while knitting
     status: 'active', // or 'finished'
     finishedAt: null,
     yarns: [], // [{ brand, name, color, weight }]
