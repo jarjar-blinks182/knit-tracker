@@ -2,6 +2,7 @@ import * as store from './store.js';
 import * as sync from './sync.js';
 import * as P from './pattern.js';
 import * as library from './library.js';
+import * as T from './time.js';
 
 const view = document.getElementById('view');
 const titleEl = document.getElementById('title');
@@ -155,6 +156,7 @@ function showCounter(id) {
       </button>
       <div class="progress" id="progress"><span></span></div>
       <div class="pattern-panel" id="pattern-panel" hidden></div>
+      <p class="time-line" id="time-line"></p>
       <div class="controls">
         <button id="minus" class="ghost" aria-label="Remove a row">− 1</button>
         <button id="plus2" class="primary" aria-label="Add a row">+ 1</button>
@@ -198,7 +200,7 @@ function showCounter(id) {
     // Undoing back into a "knit until length" section reopens it.
     // A new row clears the second counter when it's set to.
     const c2 = d > 0 && cur.counter2?.perRow && cur.counter2.count ? { counter2: { ...cur.counter2, count: 0 } } : {};
-    store.updateProject(id, { rows, ...c2, ...(cur.sectionEnds ? { sectionEnds: P.pruneEnds(cur.sectionEnds, rows) } : {}) });
+    store.updateProject(id, { rows, ...c2, ...T.tapPatch(cur), ...(cur.sectionEnds ? { sectionEnds: P.pruneEnds(cur.sectionEnds, rows) } : {}) });
     if (navigator.vibrate) navigator.vibrate(d > 0 ? 15 : [10, 40, 10]);
     paintCounter(store.getProject(id));
   };
@@ -325,6 +327,9 @@ function paintCounter(p) {
   } else {
     rep.hidden = true;
   }
+  const tl = view.querySelector('#time-line');
+  tl.hidden = !p.timeMs;
+  tl.textContent = p.timeMs ? `${T.fmt(p.timeMs)} ${p.craft === 'crochet' ? 'crocheted' : 'knitted'}${T.knittingNow(p) ? ' · counting now' : ''}` : '';
   const prog = view.querySelector('#progress');
   prog.hidden = !target;
   if (target) prog.firstElementChild.style.width = `${Math.min(100, (p.rows / target) * 100)}%`;
@@ -592,6 +597,12 @@ function showDetails(id) {
         <input id="link" value="${esc(p.link)}" placeholder="e.g. Waffle Loop Bandana by Other Loops" autocomplete="off">
       </label>
 
+      <h2>Time</h2>
+      <label>Time knitted
+        <input id="time" value="${p.timeMs ? T.fmt(p.timeMs) : ''}" placeholder="e.g. 3 h 20 min" autocomplete="off">
+      </label>
+      <p class="muted small">Counted from your row taps, so there’s nothing to start or stop. A gap longer than ${T.fmt(T.breakAfterMs(p))} between taps counts as a break. Change it here if it’s off.</p>
+
       <h2>Dates</h2>
       <div class="two">
         <label>Started <input type="date" id="started" value="${day(p.createdAt)}"></label>
@@ -641,8 +652,15 @@ function showDetails(id) {
     const finished = view.querySelector('#finished').value;
     // Keep the original time of day when the date didn't change.
     const toIso = (d, prev) => (!d ? null : prev && prev.slice(0, 10) === d ? prev : new Date(`${d}T12:00:00`).toISOString());
+    const timeText = view.querySelector('#time').value;
+    const timeMs = timeText.trim() === (p.timeMs ? T.fmt(p.timeMs) : '') ? p.timeMs || 0 : T.parse(timeText);
+    if (timeMs == null) {
+      ask('Write the time like “3 h 20 min” or “3:20”.', 'OK', false);
+      return;
+    }
     const patch = {
       yarns,
+      timeMs,
       needle: view.querySelector('#needle').value.trim(),
       link: view.querySelector('#link').value.trim(),
       createdAt: toIso(started, p.createdAt) || p.createdAt,
@@ -677,6 +695,7 @@ function showStats() {
     const n = projectStitches(p);
     if (n == null) { if (p.rows) unknown.push(p); } else stitches += n;
   }
+  const timeMs = all.reduce((a, p) => a + (p.timeMs || 0), 0);
   const n = (x) => x.toLocaleString();
   const byCraft = (c) => finished.filter((p) => (p.craft || 'knit') === c).length;
   const weights = {};
@@ -693,18 +712,20 @@ function showStats() {
         <div class="stat"><span class="stat-val">${finished.length}</span><span class="stat-label">Finished</span></div>
         <div class="stat"><span class="stat-val">${thisYear.length}</span><span class="stat-label">Finished in ${year}</span></div>
         <div class="stat"><span class="stat-val">${all.length - finished.length}</span><span class="stat-label">In progress</span></div>
+        <div class="stat"><span class="stat-val">${timeMs ? T.fmtShort(timeMs) : '–'}</span><span class="stat-label">Time spent</span></div>
       </div>
       ${finished.length ? `<p class="muted small">Finished: ${byCraft('knit')} knitting, ${byCraft('crochet')} crochet${Object.keys(weights).length ? ` · yarn weights: ${Object.entries(weights).sort((a, b) => b[1] - a[1]).map(([w, c]) => `${esc(w)} ${c}`).join(', ')}` : ''}.</p>` : ''}
       ${unknown.length ? `<p class="muted small">Stitches aren't counted for ${unknown.map((p) => `<a href="#/p/${p.id}">${esc(p.name)}</a>`).join(', ')}. Set up a pattern or add stitches per row under Edit project.</p>` : ''}
       ${finished.length ? `
         <h2>Finished projects</h2>
         <div class="table-wrap summary"><table>
-          <thead><tr><th>Project</th><th>Finished</th><th class="num">Stitches</th></tr></thead>
+          <thead><tr><th>Project</th><th>Finished</th><th class="num">Stitches</th><th class="num">Time</th></tr></thead>
           <tbody>${finished.sort((a, b) => ((a.finishedAt || '') < (b.finishedAt || '') ? 1 : -1)).map((p) => {
             const st = projectStitches(p);
             return `<tr><td><a href="#/p/${p.id}">${esc(p.name)}</a>${p.yarns?.[0] ? `<br><small>${esc(yarnLine(p.yarns[0]))}</small>` : ''}</td>
               <td class="num">${p.finishedAt ? fmtDate(p.finishedAt) : ''}</td>
-              <td class="num">${st == null ? '–' : n(st)}</td></tr>`;
+              <td class="num">${st == null ? '–' : n(st)}</td>
+              <td class="num">${p.timeMs ? T.fmt(p.timeMs) : '–'}</td></tr>`;
           }).join('')}</tbody>
         </table></div>` : ''}
     </section>`;

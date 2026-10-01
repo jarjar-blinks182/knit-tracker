@@ -36,6 +36,10 @@ devices.
   against the stitch counts the pattern states. When creating a project, the
   needle size fills in from the JSON; yarn is typed in on the same screen.
 - Notes per project
+- Time knitted per project, counted from row taps (no timer to start or stop): a
+  gap longer than 3× the project's average row time (15 to 60 min, 30 until
+  there's an average) counts as a break. Shown on the counter and the stats page;
+  editable on the details page. Logic in time.js.
 - Keeps the screen awake while a counter is open (where the browser supports it)
 - Works offline; download/restore a JSON backup
 - Yarn (brand, yarn, color, weight), needle or hook size and pattern per project
@@ -53,6 +57,7 @@ No build step: plain HTML, CSS and JavaScript modules.
 | `store.js` | Local storage of projects (localStorage), tracks unsynced changes |
 | `library.js` | Pattern library, stored and synced the same way as projects |
 | `pattern.js` | Pattern sections: position, stitch counts, checks |
+| `time.js` | Time knitted, worked out from row taps |
 | `sync.js` | Firebase sync and sign in |
 | `vendor/firebase/` | Firebase JS SDK 12.19.0, served with the app |
 | `config.js` | Firebase web config (null = this device only) |
