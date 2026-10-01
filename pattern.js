@@ -12,7 +12,11 @@
 //   "sections": [
 //     { "name": "Increases", "rowsPerRepeat": 8, "repeats": [14, 21],
 //       "stitchChanges": { "1": 1, "3": 1, "5": 1 }, "expectedEnd": [51, 72], "note": "",
-//       "instructions": { "1": "k to marker, M1R, pm, k", "*": "knit" } }   // optional
+//       "instructions": { "1": "k to marker, M1R, pm, k", "*": "knit" } },  // optional
+//     { "name": "Sleeve", "startStitches": [64, 66],  // picked up or joined: the count starts over
+//       "firstRowSide": "WS",                            // this section's first row (flat only)
+//       "rowsPerRepeat": [14, 12], "repeats": [7, 8],    // can differ by size
+//       "stitchChanges": { "last": -2 } }                // "last" = last row of the repeat
 //   ]
 // }
 
@@ -46,15 +50,20 @@ export function normalize(input) {
   if (!sectionsIn.length) throw new Error('Add at least one section.');
   const sections = sectionsIn.map((s, i) => {
     const label = s.name ? `“${s.name}”` : `Section ${i + 1}`;
-    const rowsPerRepeat = int(s.rowsPerRepeat ?? s.rows, 1);
+    const rowsPerRepeat = perSize(s.rowsPerRepeat ?? s.rows, `${label}: rows per repeat`, 1);
     if (!rowsPerRepeat) throw new Error(`${label}: rows per repeat must be 1 or more.`);
-    const repeats = perSize(s.repeats ?? 1, `${label}: repeats`, 1);
+    const maxRows = Math.max(...[].concat(rowsPerRepeat));
+    // Row keys: a row number within the repeat, or "last" for its last row
+    // (handy when the repeat length differs by size).
+    const rowKey = (k) => (String(k).trim().toLowerCase() === 'last' ? 'last' : int(k, 1));
+    // 0 is allowed for a part some sizes skip ("repeat another 0 (1) times").
+    const repeats = perSize(s.repeats ?? 1, `${label}: repeats`, 0);
     const stitchChanges = {};
     for (const [k, v] of Object.entries(s.stitchChanges || {})) {
-      const row = int(k, 1);
+      const row = rowKey(k);
       // A number, or one per size like [3, 1] for "3 (1) increases".
       const d = (Array.isArray(v) ? v : [v]).map((x) => Math.round(Number(String(x).replace('−', '-'))));
-      if (!row || row > rowsPerRepeat) throw new Error(`${label}: stitch change on row ${k}, but the repeat only has ${rowsPerRepeat} rows.`);
+      if (!row || row > maxRows) throw new Error(`${label}: stitch change on row ${k}, but the repeat only has ${maxRows} rows.`);
       if (d.some((x) => !Number.isFinite(x))) throw new Error(`${label}: row ${k} change should be a number like +1 or -2.`);
       if (d.some((x) => x)) stitchChanges[row] = d.length === 1 ? d[0] : d;
     }
@@ -62,16 +71,21 @@ export function normalize(input) {
     // A value is text, or one text per size.
     const instructions = {};
     for (const [k, v] of Object.entries(s.instructions || {})) {
-      const key = k.trim() === '*' ? '*' : int(k, 1);
+      const key = k.trim() === '*' ? '*' : rowKey(k);
       if (key === null) throw new Error(`${label}: instructions should be keyed by row number (or * for every row).`);
-      if (key !== '*' && key > rowsPerRepeat) throw new Error(`${label}: instructions for row ${k}, but the repeat only has ${rowsPerRepeat} rows.`);
+      if (key !== '*' && key > maxRows) throw new Error(`${label}: instructions for row ${k}, but the repeat only has ${maxRows} rows.`);
       const texts = (Array.isArray(v) ? v : [v]).map((x) => String(x ?? '').trim().slice(0, 500));
       if (texts.some(Boolean)) instructions[key] = texts.length === 1 ? texts[0] : texts;
     }
     const untilIn = Array.isArray(s.untilLength) ? s.untilLength : s.untilLength ? [s.untilLength] : [];
     const until = untilIn.map((x) => String(x).trim().slice(0, 60)).filter(Boolean);
+    const side = String(s.firstRowSide || '').toUpperCase();
     return {
       name: String(s.name || `Section ${i + 1}`).slice(0, 60),
+      // Stitches picked up, cast on or joined: the count starts over here.
+      startStitches: perSize(s.startStitches, `${label}: starting stitches`, 0),
+      // Side of this section's first row; RS/WS then counts from here.
+      firstRowSide: side === 'RS' || side === 'WS' ? side : null,
       rowsPerRepeat,
       repeats: until.length ? null : repeats,
       // "Repeat until 11 cm": the knitter says when the section is done.
@@ -99,12 +113,14 @@ export function normalize(input) {
 
 const sumChanges = (s) => Object.values(s.stitchChanges).reduce((a, b) => a + b, 0);
 
-// Resolve per-size stitch changes ({ 1: [3, 1] }) for the chosen size.
-function changesFor(s, size) {
+// Resolve per-size stitch changes ({ 1: [3, 1], last: -2 }) for the chosen
+// size and repeat length.
+function changesFor(s, size, rows) {
   const out = {};
   for (const [k, v] of Object.entries(s.stitchChanges || {})) {
     const d = forSize(v, size);
-    if (d) out[k] = d;
+    const row = k === 'last' ? rows : Number(k);
+    if (d && row <= rows) out[row] = (out[row] || 0) + d;
   }
   return out;
 }
@@ -128,11 +144,17 @@ export function plan(p, ends = {}) {
   let row = 0;
   let rowKnown = true;
   let sts = forSize(p.castOn, p.size) ?? null;
+  let side = { row: 1, side: p.firstRowSide };
   return p.sections.map((raw, index) => {
-    const s = { ...raw, stitchChanges: changesFor(raw, p.size) };
+    const rowsPerRepeat = forSize(raw.rowsPerRepeat, p.size);
+    const s = { ...raw, rowsPerRepeat, stitchChanges: changesFor(raw, p.size, rowsPerRepeat) };
     const until = forSize(s.untilLength, p.size) || null;
     const expected = forSize(s.expectedEnd, p.size) ?? null;
     const startRow = rowKnown ? row + 1 : null;
+    const restart = forSize(s.startStitches, p.size);
+    if (restart != null) sts = restart;
+    if (s.firstRowSide) side = { row: startRow, side: s.firstRowSide };
+    const sideFrom = side;
     const startSts = sts;
     let repeats = null;
     let rowsIn = null;
@@ -146,7 +168,7 @@ export function plan(p, ends = {}) {
         open = rowKnown;
       }
     } else {
-      repeats = forSize(s.repeats, p.size) || 1;
+      repeats = forSize(s.repeats, p.size) ?? 1;
       rowsIn = repeats * s.rowsPerRepeat;
     }
     if (rowsIn == null) {
@@ -165,6 +187,8 @@ export function plan(p, ends = {}) {
       startRow,
       endRow: rowKnown ? row : null,
       startSts,
+      restart: restart != null,
+      sideFrom,
       endSts: sts,
       open,
       expected,
@@ -206,7 +230,7 @@ export function position(p, done, ends = {}) {
     complete: false,
     total: last.endRow, // null while a length section is open
     row,
-    side: round ? null : ((row % 2 === 1) === (p.firstRowSide === 'RS') ? 'RS' : 'WS'),
+    side: round ? null : (((row - s.sideFrom.row) % 2 === 0) === (s.sideFrom.side === 'RS') ? 'RS' : 'WS'),
     inRound: round,
     unit: rowWord(p, s),
     sectionIndex: s.index,
@@ -220,7 +244,7 @@ export function position(p, done, ends = {}) {
     rowsPerRepeat: s.rowsPerRepeat,
     sts, // on the needle before working this row
     change, // stitches gained or lost on this row
-    instruction: forSize(ins[rowInRepeat] ?? ins['*'], p.size) || '', // what to do on this row
+    instruction: forSize(ins[rowInRepeat] ?? (rowInRepeat === s.rowsPerRepeat ? ins.last : undefined) ?? ins['*'], p.size) || '', // what to do on this row
     after: sts === null ? null : sts + change,
   };
 }
@@ -246,11 +270,11 @@ export function parseChanges(text) {
   const num = (x) => Number(x.replace('−', '-').replace(/\s/g, ''));
   const parts = String(text || '').split(/[;\n]+|,(?![^(]*\))/).map((x) => x.trim()).filter(Boolean);
   for (const part of parts) {
-    const m = part.match(/^(?:row\s*|round\s*)?(\d+)\s*[:=]?\s*([+\-−]?\s*\d+)\s*(?:\(([^)]*)\))?$/i);
+    const m = part.match(/^(?:row\s*|round\s*)?(\d+|last)\s*[:=]?\s*([+\-−]?\s*\d+)\s*(?:\(([^)]*)\))?$/i);
     if (!m) throw new Error(`Couldn't read “${part}”. Use row:change, like 3:+1 or 5:-1, and 1:+3 (+1) for sizes.`);
     const more = m[3] ? m[3].split(',').map((x) => x.trim()).filter(Boolean) : [];
     if (more.some((x) => !/^[+\-−]?\s*\d+$/.test(x))) throw new Error(`Couldn't read the sizes in “${part}”.`);
-    out[m[1]] = more.length ? [num(m[2]), ...more.map(num)] : num(m[2]);
+    out[m[1].toLowerCase()] = more.length ? [num(m[2]), ...more.map(num)] : num(m[2]);
   }
   return out;
 }
@@ -258,7 +282,7 @@ export function parseChanges(text) {
 export function formatChanges(obj) {
   const sg = (d) => `${d > 0 ? '+' : ''}${d}`;
   return Object.entries(obj || {})
-    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .sort((a, b) => (a[0] === 'last') - (b[0] === 'last') || Number(a[0]) - Number(b[0]))
     .map(([r, d]) => `${r}:${Array.isArray(d) ? `${sg(d[0])}${d.length > 1 ? ` (${d.slice(1).map(sg).join(', ')})` : ''}` : sg(d)}`)
     .join(', ');
 }
@@ -268,17 +292,17 @@ export function formatChanges(obj) {
 export function parseInstructions(text) {
   const out = {};
   for (const line of String(text || '').split('\n').map((x) => x.trim()).filter(Boolean)) {
-    const m = line.match(/^(?:(?:row|round|rnd)\s*)?(\d+|\*)\s*[:._)-]\s*(.*)$/i);
+    const m = line.match(/^(?:(?:row|round|rnd)\s*)?(\d+|\*|last)\s*[:._)-]\s*(.*)$/i);
     if (!m) throw new Error(`Couldn't read “${line}”. Start each line with the row number, like 1: k2, p2 (or *: for every other row).`);
     const texts = m[2].split('|').map((x) => x.trim());
-    out[m[1]] = texts.length > 1 ? texts : texts[0];
+    out[m[1].toLowerCase()] = texts.length > 1 ? texts : texts[0];
   }
   return out;
 }
 
 export function formatInstructions(obj) {
   return Object.entries(obj || {})
-    .sort((a, b) => (a[0] === '*') - (b[0] === '*') || Number(a[0]) - Number(b[0]))
+    .sort((a, b) => (a[0] === '*') - (b[0] === '*') || (a[0] === 'last') - (b[0] === 'last') || Number(a[0]) - Number(b[0]))
     .map(([r, t]) => `${r}: ${Array.isArray(t) ? t.join(' | ') : t}`)
     .join('\n');
 }

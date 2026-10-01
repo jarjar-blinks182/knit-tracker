@@ -662,7 +662,9 @@ function showPatternSetup(id) {
 
       <h2>Sections</h2>
       <p class="muted small">For numbers that change by size, write them like the pattern does: <code>14 (21)</code>.
-        Stitch changes are <code>row:change</code> within one repeat, like <code>1:+1, 3:+1, 5:+1</code>.
+        Stitch changes are <code>row:change</code> within one repeat, like <code>1:+1, 3:+1, 5:+1</code>
+        (<code>last:-2</code> means the last row of the repeat).
+        For a new piece (sleeves picked up, front and back joined), fill in <em>Start with stitches</em>.
         For “repeat until 11 cm”, fill in <em>Knit until</em>; the counter lets you say when you've reached it.</p>
       <div id="sections" class="sections"></div>
       <button type="button" class="ghost" id="add-section">+ Add section</button>
@@ -690,11 +692,21 @@ function showPatternSetup(id) {
         <button type="button" class="icon-btn s-remove" aria-label="Remove section">✕</button>
       </div>
       <div class="three">
-        <label>Rows per repeat <input class="s-rows" inputmode="numeric" value="${esc(s.rowsPerRepeat ?? '')}"></label>
+        <label>Rows per repeat <input class="s-rows" inputmode="numeric" value="${esc(P.formatSizes(s.rowsPerRepeat))}"></label>
         <label>Repeats <input class="s-repeats" inputmode="numeric" value="${esc(P.formatSizes(s.repeats ?? 1))}"></label>
         <label>Stitches at end <small>(from pattern)</small> <input class="s-expected" inputmode="numeric" value="${esc(P.formatSizes(s.expectedEnd))}"></label>
       </div>
       <label>Stitch changes <input class="s-changes" placeholder="e.g. 1:+1, 3:+1, 5:+1" value="${esc(P.formatChanges(s.stitchChanges))}"></label>
+      <div class="until-row">
+        <label>Start with stitches <small>(picked up or joined)</small>
+          <input class="s-start" inputmode="numeric" placeholder="carry on" value="${esc(P.formatSizes(s.startStitches))}"></label>
+        <label>First row <small>(new piece)</small>
+          <select class="s-side">
+            <option value="">Carry on</option>
+            <option value="RS"${s.firstRowSide === 'RS' ? ' selected' : ''}>RS</option>
+            <option value="WS"${s.firstRowSide === 'WS' ? ' selected' : ''}>WS</option>
+          </select></label>
+      </div>
       <div class="until-row">
         <label>Knit until <small>(length, instead of repeats)</small>
           <input class="s-until" placeholder="e.g. 11 cm (4.5 in)" value="${esc(Array.isArray(s.untilLength) ? s.untilLength.join(' | ') : s.untilLength || '')}"></label>
@@ -748,7 +760,9 @@ function showPatternSetup(id) {
         untilLength: until.length > 1 ? until : until[0] || null,
         estimate: P.parseSizes(el.querySelector('.s-estimate').value),
         ...(el.dataset.inTheRound ? { inTheRound: el.dataset.inTheRound === 'true' } : {}),
-        rowsPerRepeat: el.querySelector('.s-rows').value,
+        rowsPerRepeat: P.parseSizes(el.querySelector('.s-rows').value),
+        startStitches: P.parseSizes(el.querySelector('.s-start').value),
+        firstRowSide: el.querySelector('.s-side').value || null,
         repeats: P.parseSizes(el.querySelector('.s-repeats').value) ?? 1,
         expectedEnd: P.parseSizes(el.querySelector('.s-expected').value),
         stitchChanges,
@@ -783,9 +797,9 @@ function showPatternSetup(id) {
             <tr class="${s.matches === false ? 'warn' : ''}">
               <td>${esc(s.name)}<br><small>${s.until
                 ? `until ${esc(s.until)}${s.repeats != null ? ` (done: ${s.repeats * s.rowsPerRepeat})` : ''}`
-                : `${s.repeats} × ${s.rowsPerRepeat} ${P.rowWord(p, s, s.rowsPerRepeat)}`}</small></td>
-              <td class="num">${s.startRow ?? '?'}–${s.endRow ?? '?'}</td>
-              <td class="num">${s.endSts == null ? '–' : `${s.startSts} → ${s.endSts}`}
+                : s.repeats ? `${s.repeats} × ${s.rowsPerRepeat} ${P.rowWord(p, s, s.rowsPerRepeat)}` : 'not worked in this size'}</small></td>
+              <td class="num">${s.repeats === 0 ? '–' : `${s.startRow ?? '?'}–${s.endRow ?? '?'}`}</td>
+              <td class="num">${s.endSts == null ? '–' : `${s.restart ? '<small>start</small> ' : ''}${s.startSts} → ${s.endSts}`}
                 ${s.matches === true ? '<span class="ok" title="Matches the pattern">✓</span>' : ''}
                 ${s.matches === false ? `<br><small>pattern says ${s.expected}</small>` : ''}</td>
             </tr>`).join('')}

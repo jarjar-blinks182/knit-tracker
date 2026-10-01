@@ -21,6 +21,10 @@ devices.
 - Knitting in the round (rounds, no RS/WS) and "knit until 11 cm" sections:
   the counter keeps counting and you tap "Reached it" to move to the next
   section. Undoing back past that point reopens the section.
+- Garments made in pieces, like a sweater: a section can start a new piece
+  with its own stitch count (picked up, cast on or joined) and its own first
+  side (RS or WS), mix flat and in-the-round parts, and have a repeat length
+  that differs by size ("decrease every 14th (12th) round").
 - Paste a pattern as JSON instead of typing it in (see below), with a check
   against the stitch counts the pattern states. When creating a project, the
   needle size fills in from the JSON; yarn is typed in on the same screen.
@@ -149,6 +153,18 @@ Rules:
   line (size, US size if given, and cable length or type). Leave it out if the
   pattern doesn't say.
 - Put short reminders (like "then cast off") in "note".
+- For a pattern made in pieces (back, shoulders, sleeves, neck), list every
+  piece's sections in the order you knit them, repeating a section for
+  "work the other sleeve the same". When a piece starts with stitches picked
+  up, cast on or joined (like "pick up 64 sts" or "join front and back: 172
+  sts"), put the stitch count it starts with in "startStitches" on its first
+  section, counting every stitch on the needle at that point. Give that
+  section "firstRowSide" too when the piece is worked flat, and
+  "inTheRound": true or false on any section that differs from the rest.
+- rowsPerRepeat can differ by size too, e.g. [14, 12] for "every 14th (12th)
+  round". Use "last" as the row number for "on the last row of the repeat",
+  in stitchChanges and instructions.
+- "repeats" can be 0 for a part some sizes skip ("another 0 (1) times").
 - Check your numbers: castOn plus all the changes should match each
   expectedEnd. If they don't, re-read the pattern.
 ```
