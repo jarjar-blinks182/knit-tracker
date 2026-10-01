@@ -45,6 +45,11 @@
       <label id="spr-row">Stitches per row <small>(optional, for stats)</small>
         <input name="stitchesPerRow" type="number" min="1" inputmode="numeric">
       </label>
+      <details class="paste" id="new-paste">
+        <summary>Paste pattern JSON <small>(optional)</small></summary>
+        <textarea name="patternJson" rows="5" spellcheck="false" placeholder='{ "castOn": 4, "sections": [ … ] }'></textarea>
+        <p class="msg" id="new-json-msg"></p>
+      </details>
       <div class="dialog-actions">
         <button type="button" class="danger" id="delete-btn" hidden>Delete</button>
         <span class="spacer"></span>

@@ -302,6 +302,10 @@ function openEditor(id) {
   document.getElementById('delete-btn').hidden = !p;
   form.querySelector('.two').hidden = !!p?.pattern;
   form.querySelector('#spr-row').hidden = !!p?.pattern;
+  // Pattern JSON can be pasted straight in when creating a project.
+  form.querySelector('#new-paste').hidden = !!p;
+  form.querySelector('#new-paste').open = false;
+  form.querySelector('#new-json-msg').textContent = '';
   if (p) {
     form.elements.name.value = p.name;
     form.elements.craft.value = p.craft;
@@ -312,6 +316,44 @@ function openEditor(id) {
   dialog.showModal();
   if (!p) form.elements.name.focus();
 }
+
+// Pasted pattern JSON from the New project dialog, read on submit.
+let pendingPattern = null;
+
+// Tolerates a pasted ```json fenced block; throws with a readable message.
+function parsePatternJson(text) {
+  text = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  try {
+    return P.normalize(text);
+  } catch (e) {
+    throw new Error(e instanceof SyntaxError ? `That isn't valid JSON: ${e.message}` : e.message);
+  }
+}
+
+form.elements.patternJson.addEventListener('input', () => {
+  const msg = form.querySelector('#new-json-msg');
+  msg.className = 'msg';
+  msg.textContent = '';
+  try {
+    const p = parsePatternJson(form.elements.patternJson.value);
+    if (p.name && !form.elements.name.value.trim()) form.elements.name.value = p.name;
+    msg.textContent = `${p.sections.length} section${p.sections.length === 1 ? '' : 's'} found.`;
+  } catch { /* reported on save */ }
+});
+
+form.addEventListener('submit', (e) => {
+  pendingPattern = null;
+  const text = form.elements.patternJson.value.trim();
+  if (editingId || e.submitter?.value !== 'save' || !text) return;
+  try {
+    pendingPattern = parsePatternJson(text);
+  } catch (err) {
+    e.preventDefault();
+    const msg = form.querySelector('#new-json-msg');
+    msg.className = 'msg error';
+    msg.textContent = err.message;
+  }
+});
 
 dialog.addEventListener('close', () => {
   if (dialog.returnValue !== 'save') return;
@@ -327,6 +369,11 @@ dialog.addEventListener('close', () => {
     if (store.getProject(editingId)?.pattern) { delete fields.target; delete fields.repeat; delete fields.stitchesPerRow; }
     store.updateProject(editingId, fields);
     route();
+  } else if (pendingPattern) {
+    // Open pattern setup so sections and size can be checked.
+    const p = store.createProject({ ...fields, target: null, repeat: null, pattern: pendingPattern });
+    pendingPattern = null;
+    location.hash = `#/p/${p.id}/pattern`;
   } else {
     const p = store.createProject(fields);
     location.hash = `#/p/${p.id}`;
@@ -712,10 +759,7 @@ function showPatternSetup(id) {
   $('#load-json').onclick = () => {
     const msg = $('#json-msg');
     try {
-      let text = $('#json').value.trim();
-      // Tolerate a pasted ```json fenced block.
-      text = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
-      const p = P.normalize(text);
+      const p = parsePatternJson($('#json').value);
       fill(p);
       if (p.name && (proj.name === 'Untitled' || !proj.name)) store.updateProject(id, { name: p.name });
       msg.className = 'msg';
@@ -725,7 +769,7 @@ function showPatternSetup(id) {
       if (many) { $('#size-row').classList.add('attention'); $('#size').focus(); }
     } catch (e) {
       msg.className = 'msg error';
-      msg.textContent = e instanceof SyntaxError ? `That isn't valid JSON: ${e.message}` : e.message;
+      msg.textContent = e.message;
     }
   };
   $('#save-pattern').onclick = () => {
