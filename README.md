@@ -10,6 +10,8 @@ devices.
 - Multiple projects, each with a row count, optional target rows (progress bar)
   and optional rows-per-repeat ("3 / 8 into repeat 2")
 - Big tap area to add a row, −1 to undo, reset
+- Optional second counter per project (stitches or repeats within a row), with its
+  own name; it can clear itself each time you add a row
 - **Make again**: start a fresh copy of a project (same pattern and size, count at 0, yarn blank, needle size from the pattern), handy for remaking with different yarn
 - Optional pattern setup: sections (e.g. increases, middle, decreases), each a
   block of rows repeated N times with stitch increases/decreases on given rows.
