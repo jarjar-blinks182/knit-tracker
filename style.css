@@ -292,7 +292,7 @@ select { appearance: auto; }
 }
 .stat-big { font-size: clamp(48px, 16vw, 84px); font-weight: 700; line-height: 1.05; color: var(--accent); font-variant-numeric: tabular-nums; }
 .stat-label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-.stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .stat { display: grid; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
 .stat-val { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .summary th.num { text-align: right; }
@@ -320,4 +320,3 @@ label.check input { width: auto; margin: 0; }
 .lib-card .card-name { white-space: normal; }
 .lib-card .row-actions button { padding: 6px 12px; font-size: 14px; }
 .lib-rename { display: flex; gap: 8px; }
-.time-line { margin: 0; text-align: center; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
