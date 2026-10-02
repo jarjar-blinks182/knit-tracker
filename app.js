@@ -133,6 +133,36 @@ function card(p) {
 
 // ---------- counter ----------
 
+// Desktop: space bar adds a row on the counter screen, with a flash and a
+// "+1" badge so an accidental press is easy to spot.
+let spaceBump = null;
+const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+document.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' && e.key !== ' ') return;
+  if (current?.name !== 'counter' || !spaceBump || isTyping(e.target) || document.querySelector('dialog[open]')) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  e.preventDefault(); // no page scroll, no clicking a focused button
+  if (!e.repeat) spaceBump();
+});
+document.addEventListener('keyup', (e) => {
+  // Buttons click on space keyup; the row was already added on keydown.
+  if ((e.code === 'Space' || e.key === ' ') && current?.name === 'counter' && !isTyping(e.target) && !document.querySelector('dialog[open]')) e.preventDefault();
+});
+
+function flashBump() {
+  const tap = view.querySelector('#plus');
+  if (!tap) return;
+  tap.classList.remove('key-bump');
+  void tap.offsetWidth; // restart the animation on quick presses
+  tap.classList.add('key-bump');
+  const badge = document.createElement('span');
+  badge.className = 'bump-badge';
+  badge.textContent = '+1';
+  tap.append(badge);
+  badge.addEventListener('animationend', () => badge.remove());
+  setTimeout(() => badge.remove(), 1500);
+}
+
 function showCounter(id) {
   const p = store.getProject(id);
   if (!p) { location.hash = '#/'; return; }
@@ -202,6 +232,7 @@ function showCounter(id) {
     if (navigator.vibrate) navigator.vibrate(d > 0 ? 15 : [10, 40, 10]);
     paintCounter(store.getProject(id));
   };
+  spaceBump = () => { bump(1); flashBump(); };
   view.querySelector('#plus').onclick = () => bump(1);
   view.querySelector('#plus2').onclick = () => bump(1);
   view.querySelector('#minus').onclick = () => bump(-1);
